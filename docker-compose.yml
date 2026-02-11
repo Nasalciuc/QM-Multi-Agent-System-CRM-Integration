@@ -1,0 +1,21 @@
+# docker-compose.yml — QM Multi Agent System
+# Usage:
+#   docker compose up          (run pipeline)
+#   docker compose run qm-system --folder data/audio
+#   docker compose run qm-tests
+
+services:
+  qm-system:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    command: ["--folder", "data/audio"]
+
+  qm-tests:
+    build: .
+    entrypoint: ["python", "-m", "pytest"]
+    command: ["tests/", "-v", "--tb=short"]
+    volumes:
+      - ./tests:/app/tests
+      - ./config:/app/config

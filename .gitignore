@@ -18,6 +18,14 @@ build/
 # Data and logs
 data/
 *.log
+logs/
+
+# Cache
+data/cache/
+.pytest_cache/
+
+# Documentation build
+docs/_build/
 
 # IDE
 .vscode/

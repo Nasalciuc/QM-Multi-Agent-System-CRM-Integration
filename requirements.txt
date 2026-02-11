@@ -19,3 +19,10 @@ httpx>=0.28.0,<1.0
 python-dotenv>=1.2.0,<2.0
 pyyaml>=6.0,<7.0
 pydub>=0.25.1,<1.0
+
+# --- Processing ---
+tiktoken>=0.9.0,<1.0
+
+# --- Testing ---
+pytest>=8.0,<9.0
+pytest-cov>=6.0,<7.0

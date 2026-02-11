@@ -15,12 +15,13 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code and config
+# Copy application code, config and tests
 COPY src/ src/
 COPY config/ config/
+COPY tests/ tests/
 
 # Create data directories
-RUN mkdir -p data/audio data/transcripts data/evaluations data/exports
+RUN mkdir -p data/audio data/transcripts data/evaluations data/cache
 
 # Set Python path so src/ imports work
 ENV PYTHONPATH=/app/src
