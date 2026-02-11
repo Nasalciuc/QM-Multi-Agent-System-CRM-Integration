@@ -1,129 +1,119 @@
 """
-Agent 4: Integration & Delivery
+Agent 4: Integration & Export
 
-Purpose: Send QA results to target system and export reports
+Purpose: Generate Excel/CSV/JSON reports from evaluations
+Style: Matches my existing Cell 4 export pattern
 
-Dependencies:
-    - httpx (for webhook calls)
-
-Delivery options:
-    1. Webhook POST (primary) - send JSON to configured URL
-    2. JSON file export - save to data/evaluations/
-    3. CSV export - save to data/exports/
+Exports:
+- Excel (.xlsx) with Summary + Details sheets
+- CSV (summary + details)
+- JSON (full evaluation data)
 
 TODO:
-    - deliver(evaluation, call_metadata) -> bool
-    - send_webhook(payload) -> bool
-    - save_evaluation(evaluation, call_id) -> str  (filepath)
-    - export_csv(evaluations) -> str  (filepath)
-    - _retry_with_backoff(func, max_retries) -> result
+- Implement IntegrationAgent
+- Copy my working export logic
 """
 
-import os
-import json
-import time
 from pathlib import Path
-from typing import Optional
-
-# import httpx   # TODO: Uncomment when implementing
+from typing import Dict, List, Optional
+from datetime import datetime
+import json
+import os
 
 
 class IntegrationAgent:
-    """
-    Delivers QA results to target systems.
+    """Agent: Export results to Excel/CSV/JSON and optional webhook"""
 
-    Usage:
-        agent = IntegrationAgent(config)
-        agent.deliver(evaluation, call_metadata)
-        agent.export_csv(all_evaluations)
-
-    Config keys (from config/agents.yaml):
-        integration.webhook_url     -> from .env WEBHOOK_URL
-        integration.retry_attempts  -> 3
-
-    Env vars (from .env):
-        WEBHOOK_URL  (optional - if empty, only saves locally)
-    """
-
-    def __init__(self, config: dict):
+    def __init__(self, output_folder: str = "data/evaluations", webhook_url: str = ""):
         """
         TODO:
-            - Read WEBHOOK_URL from os.environ (may be empty)
-            - Store retry_attempts from config
-            - Set output dirs: data/evaluations/, data/exports/
+        - Store output folder
+        - Store webhook URL (optional, from .env WEBHOOK_URL)
+        - Create output folder if not exists
+
+        Usage:
+            agent_integration = IntegrationAgent(
+                output_folder="data/evaluations",
+                webhook_url=os.environ.get('WEBHOOK_URL', '')
+            )
+        """
+        self.output_folder = output_folder
+        self.webhook_url = webhook_url
+        # TODO: Implement
+
+    def export_all(self, evaluations: List[Dict], criteria_ref: Dict) -> Dict[str, str]:
+        """
+        Export evaluations to Excel + CSV + JSON.
+
+        TODO:
+        1. Generate timestamp: datetime.now().strftime('%Y%m%d_%H%M%S')
+        2. Base path: f"{self.output_folder}/QM_{timestamp}"
+        3. Build summary DataFrame:
+           - Columns: File, Type, Score, Phone, Sales, Closing, Soft, YES, PARTIAL, NO, Cost
+        4. Build detail DataFrame:
+           - Columns: File, Category, Criterion, Score, Evidence
+        5. Write Excel with 2 sheets (Summary + Details)
+        6. Write CSV files (summary + details)
+        7. Write JSON with metadata + evaluations
+        8. Return dict of filepaths: {"excel": ..., "csv_summary": ..., "json": ...}
+
+        My working pattern:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            base = f"{self.output_folder}/QM_{timestamp}"
+
+            df_summary = pd.DataFrame([{
+                'File': e['filename'], 'Type': e['call_type'], 'Score': e['overall_score'],
+                'Phone': e['score_data']['category_scores']['phone_skills']['score'],
+                'Sales': e['score_data']['category_scores']['sales_techniques']['score'],
+                'Closing': e['score_data']['category_scores']['urgency_closing']['score'],
+                'Soft': e['score_data']['category_scores']['soft_skills']['score'],
+                'YES': e['score_data']['score_breakdown']['yes_count'],
+                'PARTIAL': e['score_data']['score_breakdown']['partial_count'],
+                'NO': e['score_data']['score_breakdown']['no_count'],
+                'Cost': e['cost_usd']
+            } for e in evaluations])
+
+            with pd.ExcelWriter(f"{base}.xlsx", engine='openpyxl') as w:
+                df_summary.to_excel(w, sheet_name='Summary', index=False)
+                df_detail.to_excel(w, sheet_name='Details', index=False)
         """
         # TODO: Implement
         pass
 
-    def deliver(self, evaluation: dict, call_metadata: dict) -> bool:
+    def export_json(self, evaluations: List[Dict], model_name: str) -> str:
         """
-        Deliver evaluation results.
-
         TODO:
-            1. Save evaluation JSON locally (always)
-            2. If webhook_url configured: send via webhook
-            3. Return True if all deliveries succeeded
+        - Build JSON structure:
+            {
+                "metadata": {
+                    "generated": datetime.now().isoformat(),
+                    "model": model_name,
+                    "calls": len(evaluations),
+                    "cost_usd": total_cost
+                },
+                "evaluations": [...]
+            }
+        - Write to file
+        - Return filepath
         """
         # TODO: Implement
         pass
 
     def send_webhook(self, payload: dict) -> bool:
         """
-        POST evaluation to webhook URL.
-
         TODO:
-            - Build payload with evaluation + metadata
-            - POST to self.webhook_url with JSON body
-            - Retry up to self.retry_attempts on failure
-            - Use exponential backoff: 1s, 2s, 4s
-            - Return True on success (2xx response)
-            - Log errors on failure
+        - If self.webhook_url is empty, skip
+        - POST payload as JSON to webhook URL
+        - Retry 3 times with exponential backoff (1s, 2s, 4s)
+        - Return True on success (2xx), False on failure
         """
         # TODO: Implement
         pass
 
-    def save_evaluation(self, evaluation: dict, call_id: str) -> str:
-        """
-        Save evaluation as JSON file.
 
-        TODO:
-            - Path: data/evaluations/{call_id}.json
-            - Write with json.dump(indent=2)
-            - Return filepath
-        """
-        # TODO: Implement
-        pass
-
-    def export_csv(self, evaluations: list[dict], filename: str = "qa_results.csv") -> str:
-        """
-        Export all evaluations to a single CSV file.
-
-        TODO:
-            Columns:
-                call_id, date, duration, direction,
-                overall_score,
-                phone_skills_avg, sales_techniques_avg,
-                urgency_closing_avg, soft_skills_avg,
-                PS-01, PS-02, PS-03, PS-04, PS-05, PS-06,
-                ST-01, ST-02, ST-03, ST-04, ST-05, ST-06,
-                UC-01, UC-02, UC-03, UC-04, UC-05, UC-06,
-                SS-01, SS-02, SS-03, SS-04, SS-05, SS-06,
-                model_used, cost_usd
-
-            - Write to data/exports/{filename}
-            - Return filepath
-        """
-        # TODO: Implement
-        pass
-
-    def _retry_with_backoff(self, func, max_retries: int = 3):
-        """
-        Retry a function with exponential backoff.
-
-        TODO:
-            - Try func()
-            - On failure: wait 2^attempt seconds, retry
-            - After max_retries: return None / raise
-        """
-        # TODO: Implement
-        pass
+# TODO: Initialize like this:
+# agent_integration = IntegrationAgent(
+#     output_folder="data/evaluations",
+#     webhook_url=os.environ.get('WEBHOOK_URL', '')
+# )
+# files = agent_integration.export_all(evaluations, agent_qm.EVALUATION_CRITERIA)

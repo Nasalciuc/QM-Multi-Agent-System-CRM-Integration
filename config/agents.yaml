@@ -11,23 +11,28 @@ ringcentral:
   with_recording: true
 
 elevenlabs:
-  model: "scribe_v1"
-  language_code: "eng"
-  diarization: true
-  tag_audio_events: true
+  model: "scribe_v1"           # ElevenLabs Scribe v1
+  credits_per_minute: 280      # ~280 credits/min on ElevenLabs
   cost_per_minute: 0.005       # $0.005/min
   output_folder: "data/transcripts"
 
 openrouter:
-  primary_model: "anthropic/claude-sonnet-4-20250514"
-  fallback_model: "google/gemini-2.0-flash-001"
-  budget_model: "meta-llama/llama-3.1-70b-instruct"
+  model: "gpt-4o-2024-11-20"  # Primary model (via OpenRouter)
+  # Alternative models:
+  # - "anthropic/claude-sonnet-4-20250514"
+  # - "google/gemini-2.0-flash-001"
   temperature: 0.1             # Low for consistent scoring
   max_tokens: 4096
-  timeout_seconds: 60
+  pricing:
+    input_per_1m: 2.50
+    output_per_1m: 10.00
 
 integration:
   webhook_url: ""              # Set via WEBHOOK_URL env var
   retry_attempts: 3
-  evaluations_folder: "data/evaluations"
-  exports_folder: "data/exports"
+  output_folder: "data/evaluations"
+
+audio_extensions:
+  - ".mp3"
+  - ".wav"
+  - ".m4a"

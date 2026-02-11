@@ -1,220 +1,310 @@
 """
-Agent 3: OpenRouter QA Evaluation
+Agent 3: Quality Management Evaluation
 
-Purpose: Evaluate call transcripts against 24 QA criteria using LLMs
+Purpose: Evaluate call transcripts using LLM (OpenAI/OpenRouter)
+Style: Matches my existing QualityManagementAgent exactly
 
-Dependencies:
-    - httpx (for API calls)
-    - pyyaml (for loading criteria)
-
-API Details:
-    - Base URL: https://openrouter.ai/api/v1
-    - Endpoint: POST /chat/completions (OpenAI-compatible)
-    - Auth: Bearer token in Authorization header
-
-Model Fallback Chain:
-    1. anthropic/claude-sonnet-4-20250514   (best quality)
-    2. google/gemini-2.0-flash-001          (good fallback)
-    3. meta-llama/llama-3.1-70b-instruct    (budget fallback)
-
-QA Criteria: 24 total, 4 categories x 6 each
-    - Phone Skills (PS-01 to PS-06)
-    - Sales Techniques (ST-01 to ST-06)
-    - Urgency & Closing (UC-01 to UC-06)
-    - Soft Skills (SS-01 to SS-06)
+Model: gpt-4o-2024-11-20 (via OpenAI or OpenRouter)
+Criteria: 24 total across 4 categories
+Scoring: YES / PARTIAL / NO / N/A per criterion
+Output: JSON with scores, evidence, assessment
 
 TODO:
-    - evaluate(transcript, criteria) -> dict
-    - _build_messages(transcript, criteria) -> list[dict]
-    - _call_openrouter(messages, model) -> dict
-    - _call_with_fallback(messages) -> dict
-    - _parse_response(content) -> dict
-    - _extract_json(text) -> dict  (handle markdown code blocks)
-    - load_criteria(yaml_path) -> dict
+- Copy my working QualityManagementAgent class
+- All 24 EVALUATION_CRITERIA are already defined below
+- Implement evaluate_call() and calculate_score()
 """
 
-import os
+from typing import Dict, List, Tuple
 import json
-from typing import Optional
+import time
+import re
 
-# import httpx   # TODO: Uncomment when implementing
 
+class QualityManagementAgent:
+    """Agent profesional pentru evaluarea calitatii apelurilor de vanzari"""
 
-class OpenRouterAgent:
-    """
-    Evaluates call transcripts against 24 QA criteria via LLM.
+    OPENAI_MODEL = "gpt-4o-2024-11-20"
 
-    Usage:
-        agent = OpenRouterAgent(config)
-        criteria = agent.load_criteria("config/qa_criteria.yaml")
-        result = agent.evaluate(transcript_text, criteria)
-        print(f"Overall score: {result['overall_score']}")
+    PRICING = {
+        "input_per_1m": 2.50,
+        "output_per_1m": 10.00
+    }
 
-    Config keys (from config/agents.yaml):
-        openrouter.primary_model    -> "anthropic/claude-sonnet-4-20250514"
-        openrouter.fallback_model   -> "google/gemini-2.0-flash-001"
-        openrouter.strict_mode      -> True
+    # ═══════════════════════════════════════════════════════════════
+    # ALL 24 EVALUATION CRITERIA (from my working notebook)
+    # ═══════════════════════════════════════════════════════════════
 
-    Env vars (from .env):
-        OPENROUTER_API_KEY
-    """
+    EVALUATION_CRITERIA = {
+        # --- PHONE SKILLS (5 criteria) ---
+        "greeting_prepared": {
+            "description": "Was the agent prepared and timely greeted the client? Did the agent identify himself? Did the agent request the name of the client and use it? Did the agent thank the guest and ask how he could assist?",
+            "category": "phone_skills",
+            "weight": 1.0,
+            "first_call_only": False
+        },
+        "contact_info": {
+            "description": "Did the agent ask what will be the best way to reach the customer back? Did the agent spell back client's email and confirmed the phone number?",
+            "category": "phone_skills",
+            "weight": 1.0,
+            "first_call_only": False
+        },
+        "source_discovery": {
+            "description": "Did the agent ask how client found out about our website?",
+            "category": "phone_skills",
+            "weight": 0.5,
+            "first_call_only": True
+        },
+        "first_time_customer": {
+            "description": "Did the agent ask if this is customer's first interaction with someone from our company?",
+            "category": "phone_skills",
+            "weight": 1.0,
+            "first_call_only": True
+        },
+        "advertised_offer": {
+            "description": "Did the agent inform and clearly explain the details about our advertised offer from the website? (if applicable)",
+            "category": "phone_skills",
+            "weight": 0.8,
+            "first_call_only": False
+        },
 
-    BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+        # --- SALES TECHNIQUES (8 criteria) ---
+        "flexibility_dates": {
+            "description": "Did the agent ask about flexibility (travel dates/airports/preferred departure/arrival times)?",
+            "category": "sales_techniques",
+            "weight": 1.0,
+            "first_call_only": False
+        },
+        "airline_preferences": {
+            "description": "Did the agent ask about airline/other preferences? Development in case customer has preferences: reason (miles or experience)",
+            "category": "sales_techniques",
+            "weight": 1.0,
+            "first_call_only": False
+        },
+        "product_presentation": {
+            "description": "Product presentation: Product features (value), Value first / price last",
+            "category": "sales_techniques",
+            "weight": 1.5,
+            "first_call_only": False
+        },
+        "budget_inquiry": {
+            "description": "Did the agent ask about clients budget? (price expectations)",
+            "category": "sales_techniques",
+            "weight": 1.0,
+            "first_call_only": False
+        },
+        "online_prices": {
+            "description": "Did the agent ask if customer checked online prices?",
+            "category": "sales_techniques",
+            "weight": 0.8,
+            "first_call_only": False
+        },
+        "fare_guarantee": {
+            "description": "Did the agent offer fare guarantee and the ability to beat the prices?",
+            "category": "sales_techniques",
+            "weight": 1.0,
+            "first_call_only": False
+        },
+        "objection_handling": {
+            "description": "Good objection handling (if applicable)",
+            "category": "sales_techniques",
+            "weight": 1.2,
+            "first_call_only": False
+        },
+        "next_call_scheduling": {
+            "description": "Did the agent set a time for the next conversation with the client? Did the agent call at the agreed time?",
+            "category": "sales_techniques",
+            "weight": 1.0,
+            "first_call_only": False
+        },
 
-    # Model fallback chain (try in order)
-    MODELS = [
-        "anthropic/claude-sonnet-4-20250514",
-        "google/gemini-2.0-flash-001",
-        "meta-llama/llama-3.1-70b-instruct",
-    ]
+        # --- URGENCY & CLOSING (3 criteria) ---
+        "urgency_creation": {
+            "description": "Did the agent create the sense of urgency based on seat availability and advance purchase?",
+            "category": "urgency_closing",
+            "weight": 1.2,
+            "first_call_only": False
+        },
+        "additional_assistance": {
+            "description": "Offers additional assistance before closing the interaction (Mr. Smith, now that I have your flight package confirmed, is there any other information I can provide you?)",
+            "category": "urgency_closing",
+            "weight": 0.8,
+            "first_call_only": False
+        },
+        "thank_you_closing": {
+            "description": "Did the agent thank the caller for calling Buy Business Class?",
+            "category": "urgency_closing",
+            "weight": 0.8,
+            "first_call_only": False
+        },
 
-    def __init__(self, config: dict):
+        # --- SOFT SKILLS (8 criteria) ---
+        "straight_line_system": {
+            "description": "Did the agent use the straight line persuasion system? Having control over the call (every time the customer tries to take the conversation away from the sale by talking about something irrelevant you quickly bring it right back)",
+            "category": "soft_skills",
+            "weight": 1.5,
+            "first_call_only": False
+        },
+        "consultative_expertise": {
+            "description": "Did the agent sound consultative and display expertise?",
+            "category": "soft_skills",
+            "weight": 1.5,
+            "first_call_only": False
+        },
+        "positive_tone": {
+            "description": "Upbeat & Positive Tone, uses appropriate vocal inflection / Positive Verbiage using a variety of 'Power Words'",
+            "category": "soft_skills",
+            "weight": 1.0,
+            "first_call_only": False
+        },
+        "authenticity": {
+            "description": "Responds to guest questions and conversation with /Authenticity/Appropriateness",
+            "category": "soft_skills",
+            "weight": 1.0,
+            "first_call_only": False
+        },
+        "pace_matching": {
+            "description": "Pace is appropriate and easy to understand, and matches the guest pace (agent is receptive to guests pace)",
+            "category": "soft_skills",
+            "weight": 0.8,
+            "first_call_only": False
+        },
+        "answers_questions": {
+            "description": "Answers questions/or offers to locate unknown information",
+            "category": "soft_skills",
+            "weight": 1.0,
+            "first_call_only": False
+        },
+        "call_leadership": {
+            "description": "Leads the guest through the call, makes the transaction easy for the guest Talking vs Listening percentage",
+            "category": "soft_skills",
+            "weight": 1.2,
+            "first_call_only": False
+        },
+        "accurate_information": {
+            "description": "Provides accurate information",
+            "category": "soft_skills",
+            "weight": 1.5,
+            "first_call_only": False
+        }
+    }
+
+    def __init__(self, openai_client):
         """
         TODO:
-            - Read OPENROUTER_API_KEY from os.environ
-            - Store model list from config (or use defaults above)
-            - Set temperature=0.1 (low for consistency)
-            - Set max_tokens=4096
+        - Store OpenAI client
+        - Print init info (model, criteria count)
+
+        Usage:
+            from openai import OpenAI
+            client = OpenAI(api_key=os.environ['OPENROUTER_API_KEY'],
+                           base_url="https://openrouter.ai/api/v1")
+            agent_qm = QualityManagementAgent(client)
+        """
+        self.client = openai_client
+        self.model = self.OPENAI_MODEL
+        # TODO: Implement
+
+    def detect_call_type(self, filename: str) -> Tuple[bool, str]:
+        """
+        Detect if call is first or follow-up from filename.
+
+        TODO:
+        - Check filename for: "2nd", "second", "follow", "follow-up", "followup"
+        - Return (is_followup: bool, call_type: str)
+
+        My working code:
+            filename_lower = filename.lower()
+            follow_up_indicators = ["2nd", "second", "follow", "follow-up", "followup"]
+            is_followup = any(indicator in filename_lower for indicator in follow_up_indicators)
+            call_type = "Follow-up Call" if is_followup else "First Call"
+            return is_followup, call_type
         """
         # TODO: Implement
         pass
 
-    def evaluate(self, transcript: str, criteria: dict) -> dict:
+    def evaluate_call(self, transcript: str, filename: str, max_retries: int = 2) -> Dict:
         """
-        Evaluate a transcript against all 24 QA criteria.
+        Evaluate a call transcript against all applicable criteria.
 
         TODO:
-            1. Build system + user messages
-            2. Call OpenRouter with fallback
-            3. Parse JSON response
-            4. Validate all 24 scores present and in range 1-5
-            5. Calculate category averages
-            6. Calculate overall score
-            7. Return result dict:
-                {
-                    'criterion_scores': {
-                        'PS-01': {'score': 4, 'justification': '...', 'evidence': '...'},
-                        'PS-02': {...},
-                        ... (all 24)
-                    },
-                    'category_averages': {
-                        'phone_skills': 3.8,
-                        'sales_techniques': 3.2,
-                        'urgency_closing': 2.5,
-                        'soft_skills': 4.0
-                    },
-                    'overall_score': 3.4,
-                    'strengths': ['...', '...', '...'],
-                    'improvements': ['...', '...', '...'],
-                    'coaching_notes': '...',
-                    'model_used': 'anthropic/claude-sonnet-4-20250514',
-                    'tokens_used': {'prompt': 1200, 'completion': 800},
-                    'cost_usd': 0.012
+        1. Detect call type (first vs follow-up)
+        2. Filter criteria: skip first_call_only criteria for follow-ups
+        3. Build system prompt with:
+           - Call type
+           - Criteria count
+           - All criteria descriptions
+           - Expected JSON output format
+        4. Build user prompt with transcript + criteria list
+        5. Call OpenAI API:
+           - model=self.model
+           - temperature=0.1
+           - max_tokens=4096
+           - response_format={"type": "json_object"}
+        6. Parse JSON response
+        7. Validate:
+           - All criteria present
+           - Scores are YES/PARTIAL/NO/N/A
+        8. Retry if validation fails (up to max_retries)
+        9. Add metadata: call_type, model_used, tokens_used, cost_usd
+        10. Return evaluation dict
+
+        Expected response structure:
+            {
+                "criteria": {
+                    "greeting_prepared": {"score": "YES", "evidence": "..."},
+                    "contact_info": {"score": "PARTIAL", "evidence": "..."},
+                    ...
+                },
+                "overall_assessment": "2-3 sentence summary",
+                "strengths": ["...", "...", "..."],
+                "improvements": ["...", "...", "..."],
+                "critical_gaps": ["...", "..."]
+            }
+        """
+        # TODO: Implement
+        pass
+
+    def calculate_score(self, evaluation: Dict) -> Dict:
+        """
+        Calculate overall score (0-100) from YES/PARTIAL/NO scores.
+
+        TODO:
+        - YES = 1.0 * weight
+        - PARTIAL = 0.5 * weight
+        - NO = 0.0 * weight
+        - N/A = skip (don't count)
+        - overall_score = (total_points / total_weight) * 100
+        - Calculate per-category scores
+        - Count YES/PARTIAL/NO/N/A breakdown
+
+        Return:
+            {
+                "overall_score": 75.5,
+                "total_points": 15.3,
+                "total_weight": 20.3,
+                "category_scores": {
+                    "phone_skills": {"score": 80.0, "count": 5},
+                    "sales_techniques": {"score": 70.0, "count": 8},
+                    "urgency_closing": {"score": 66.7, "count": 3},
+                    "soft_skills": {"score": 85.0, "count": 8}
+                },
+                "score_breakdown": {
+                    "yes_count": 12,
+                    "partial_count": 5,
+                    "no_count": 3,
+                    "na_count": 4
                 }
+            }
         """
         # TODO: Implement
         pass
 
-    def _build_messages(self, transcript: str, criteria: dict) -> list[dict]:
+    def calculate_listening_ratio(self, transcript: str) -> Dict[str, float]:
         """
-        Build the LLM prompt messages.
-
         TODO:
-            System message:
-                - You are an expert call center QA analyst
-                - Evaluate against the provided criteria
-                - Score each 1-5 with justification
-                - Return ONLY valid JSON
-
-            User message:
-                - Include the full transcript
-                - Include all 24 criteria with scoring rubrics
-                - Specify the exact JSON output schema
-
-            Return: [
-                {"role": "system", "content": "..."},
-                {"role": "user", "content": "..."}
-            ]
-        """
-        # TODO: Implement
-        pass
-
-    def _call_openrouter(self, messages: list[dict], model: str) -> dict:
-        """
-        Call OpenRouter API with a specific model.
-
-        TODO:
-            Request:
-                POST https://openrouter.ai/api/v1/chat/completions
-                Headers:
-                    Authorization: Bearer {api_key}
-                    Content-Type: application/json
-                Body:
-                    {
-                        "model": model,
-                        "messages": messages,
-                        "temperature": 0.1,
-                        "max_tokens": 4096
-                    }
-
-            - Send with httpx.post()
-            - Check status_code == 200
-            - Return response.json()
-            - On error: raise with details
-        """
-        # TODO: Implement
-        pass
-
-    def _call_with_fallback(self, messages: list[dict]) -> dict:
-        """
-        Try models in order until one succeeds.
-
-        TODO:
-            - For each model in self.MODELS:
-                - Try _call_openrouter(messages, model)
-                - On success: return response (include model_used)
-                - On failure: log warning, try next
-            - If all fail: raise error with all failure details
-        """
-        # TODO: Implement
-        pass
-
-    def _parse_response(self, raw_response: dict) -> dict:
-        """
-        Extract evaluation from LLM response.
-
-        TODO:
-            - Get content = response['choices'][0]['message']['content']
-            - Extract JSON from content (_extract_json)
-            - Validate structure
-            - Return parsed evaluation dict
-        """
-        # TODO: Implement
-        pass
-
-    def _extract_json(self, text: str) -> dict:
-        """
-        Extract JSON from LLM response text.
-
-        LLMs often wrap JSON in markdown code blocks.
-
-        TODO:
-            - Try json.loads(text) directly
-            - Try extracting from ```json ... ``` blocks
-            - Try finding first { to last } in text
-            - Raise ValueError if no valid JSON found
-        """
-        # TODO: Implement
-        pass
-
-    def load_criteria(self, yaml_path: str = "config/qa_criteria.yaml") -> dict:
-        """
-        Load QA criteria from YAML file.
-
-        TODO:
-            - Open and parse YAML file
-            - Validate 4 categories x 6 criteria = 24 total
-            - Return criteria dict
+        - Estimate agent vs client talking percentage
+        - Return {"agent_percentage": 60.0, "client_percentage": 40.0, "total_words": N}
         """
         # TODO: Implement
         pass

@@ -1,157 +1,121 @@
 """
 Agent 1: RingCentral Audio Retrieval
 
-Purpose: Download call recordings via RingCentral Official SDK (JWT auth)
-
-Dependencies:
-    - ringcentral (Official SDK)
-    - python-dotenv
-
-Authentication: JWT flow (no user interaction needed)
-    - Uses RC_USER_JWT from .env
-    - SDK handles token refresh automatically
-
-Rate Limiting:
-    - 1.5s delay between download requests
-    - Exponential backoff on 429 responses
+Purpose: Download call recordings using Official RingCentral SDK
+Style: Matches my AudioFileFinder + RingCentral SDK pattern
 
 TODO:
-    - authenticate() -> bool
-    - search_recordings(date_from, date_to) -> list[dict]
-    - download_audio(call_record) -> str  (returns filepath)
-    - _download_batch(records) -> list[str]
-    - _build_call_log_params(date_from, date_to) -> dict
-    - _handle_pagination(response) -> list[dict]  (follow nextPage links)
-    - _extract_metadata(record) -> dict
+- Implement RingCentralAgent (JWT auth, search, download)
+- Implement AudioFileFinder (local file discovery)
 """
 
+from pathlib import Path
+from typing import List, Dict, Optional, Tuple
 import os
 import time
-from pathlib import Path
-from typing import Optional
 
-# from ringcentral import SDK   # TODO: Uncomment when implementing
+
+class AudioFileFinder:
+    """Agent: Finds and analyzes audio files in local folder"""
+
+    def __init__(self, folder_path: str, extensions: tuple = (".mp3", ".wav", ".m4a")):
+        self.folder_path = Path(folder_path)
+        self.extensions = extensions
+
+    def find_all(self) -> List[Path]:
+        """
+        TODO:
+        - Check folder exists
+        - Glob for all audio extensions
+        - Return sorted list of Paths
+        """
+        # TODO: Implement
+        pass
+
+    def get_info(self, file_path: Path) -> Dict:
+        """
+        TODO:
+        - Get file stat (size)
+        - Return {"name": ..., "size_mb": ...}
+        """
+        # TODO: Implement
+        pass
+
+    def get_duration(self, file_path: Path) -> Optional[float]:
+        """
+        TODO:
+        - Use pydub AudioSegment.from_file()
+        - Return duration in minutes
+        - Return None if file unreadable
+        """
+        # TODO: Implement
+        pass
 
 
 class RingCentralAgent:
-    """
-    Downloads call recordings from RingCentral.
+    """Agent: Download audio from RingCentral via Official SDK"""
 
-    Usage:
-        agent = RingCentralAgent(config)
-        agent.authenticate()
-        calls = agent.search_recordings("2025-02-01", "2025-02-11")
-        for call in calls:
-            filepath = agent.download_audio(call)
-
-    Config keys needed (from config/agents.yaml):
-        ringcentral.download_folder  -> "data/audio"
-        ringcentral.delay_seconds    -> 1.5
-        ringcentral.days_back        -> 7
-
-    Env vars needed (from .env):
-        RC_APP_CLIENT_ID
-        RC_APP_CLIENT_SECRET
-        RC_SERVER_URL
-        RC_USER_JWT
-    """
-
-    def __init__(self, config: dict):
+    def __init__(self, platform):
         """
         TODO:
-            - Read credentials from os.environ
-            - Store config (download_folder, delay_seconds)
-            - Initialize SDK: SDK(client_id, client_secret, server_url)
-            - Don't authenticate yet (call authenticate() explicitly)
-        """
-        # TODO: Implement
-        pass
+        - Store authenticated platform instance
+        - Set download folder from config
+        - Set rate limit delay (1.5s)
 
-    def authenticate(self) -> bool:
-        """
-        Authenticate with RingCentral using JWT.
-
-        TODO:
-            - platform = sdk.platform()
-            - platform.login(jwt=os.environ['RC_USER_JWT'])
-            - Return True on success
-            - Log error and return False on failure
-
-        RingCentral SDK JWT auth:
-            sdk = SDK(client_id, client_secret, server_url)
+        Usage:
+            from ringcentral import SDK
+            sdk = SDK(client_id, client_secret, server)
             platform = sdk.platform()
-            platform.login(jwt='your_jwt_token')
+            platform.login(jwt=jwt_token)
+            agent_rc = RingCentralAgent(platform)
         """
+        self.platform = platform
         # TODO: Implement
-        pass
 
-    def search_recordings(
-        self,
-        date_from: str,
-        date_to: Optional[str] = None,
-    ) -> list[dict]:
+    def search_recordings(self, date_from: str, date_to: str = None) -> List[Dict]:
         """
-        Search RingCentral call log for calls with recordings.
-
-        API: GET /restapi/v1.0/account/~/call-log
-
         TODO:
-            - Build query params:
-                dateFrom, dateTo, type="Voice",
-                withRecording=True, perPage=100
-            - Send GET request via platform.get()
-            - Handle pagination (check for navigation.nextPage)
-            - Filter: only calls with recording.contentUri
-            - Extract metadata for each call:
-                {call_id, session_id, start_time, duration,
-                 direction, from_number, to_number,
-                 recording_id, content_uri}
-            - Return list of call dicts
-
-        Pagination pattern:
-            response = platform.get('/restapi/v1.0/account/~/call-log', params)
-            records = response.json().records
-            while response.json().navigation.nextPage:
-                response = platform.get(nextPage.uri)
-                records += response.json().records
+        - Call /restapi/v1.0/account/~/call-log
+        - Params: dateFrom, dateTo, type=Voice, withRecording=True, perPage=100
+        - Handle pagination (follow navigation.nextPage)
+        - Filter: only calls with recording.contentUri
+        - Return list of call dicts with metadata
         """
         # TODO: Implement
         pass
 
-    def download_audio(self, call_record: dict) -> str:
+    def download_audio(self, call_record: dict) -> Optional[str]:
         """
-        Download a single call recording.
-
         TODO:
-            - Get content_uri from call_record
-            - Make authenticated GET to content_uri:
-                response = platform.get(content_uri)
-            - Save to: data/audio/{call_id}_{timestamp}.mp3
-            - Respect rate limit: time.sleep(self.delay_seconds)
-            - Return filepath string
-            - On error: log warning, return None
-
-        Rate limiting:
-            time.sleep(1.5)  # Between each download
+        - Get contentUri from call_record
+        - Download via platform.get(contentUri)
+        - Save to data/audio/{call_id}_{timestamp}.mp3
+        - Rate limit: time.sleep(1.5) between downloads
+        - Return filepath or None on error
         """
         # TODO: Implement
         pass
 
-    def search_and_download(
-        self,
-        date_from: str,
-        date_to: Optional[str] = None,
-    ) -> list[dict]:
+    def search_and_download(self, date_from: str, date_to: str = None) -> List[Dict]:
         """
-        Convenience: search + download all in one call.
-
         TODO:
-            - calls = self.search_recordings(date_from, date_to)
-            - For each call:
-                filepath = self.download_audio(call)
-                call['local_audio_path'] = filepath
-            - Return enriched list with local paths
-            - Log progress: "Downloaded X of Y recordings"
+        - calls = self.search_recordings(date_from, date_to)
+        - For each call: download and add local_audio_path
+        - Print progress: "Downloaded X of Y recordings"
+        - Return enriched call list
         """
         # TODO: Implement
         pass
+
+
+# TODO: Initialize like this:
+# === Option A: From RingCentral API ===
+# from ringcentral import SDK
+# sdk = SDK(os.environ['RC_APP_CLIENT_ID'], os.environ['RC_APP_CLIENT_SECRET'], os.environ['RC_SERVER_URL'])
+# platform = sdk.platform()
+# platform.login(jwt=os.environ['RC_USER_JWT'])
+# agent_rc = RingCentralAgent(platform)
+#
+# === Option B: From local folder ===
+# agent_finder = AudioFileFinder(folder_path="data/audio", extensions=(".mp3", ".wav"))
+# audio_files = agent_finder.find_all()

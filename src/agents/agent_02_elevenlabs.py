@@ -1,184 +1,100 @@
 """
-Agent 2: ElevenLabs Transcription
+Agent 2: ElevenLabs Speech-to-Text
 
-Purpose: Transcribe audio files with speaker diarization
+Purpose: Transcribe audio files using ElevenLabs Scribe v1
+Style: Matches my existing ElevenLabsSTTAgent exactly
 
-Dependencies:
-    - httpx (for API calls)
-
-API Details:
-    - Endpoint: POST https://api.elevenlabs.io/v1/speech-to-text
-    - Auth: xi-api-key header
-    - Model: scribe_v1
-    - Cost: $0.005 per minute of audio
-    - Max file: 1GB
-    - Formats: mp3, wav, m4a, ogg, flac
-
-Response format:
-    {
-        "language_code": "eng",
-        "language_probability": 0.98,
-        "text": "full transcript...",
-        "words": [
-            {"text": "Hello", "start": 0.0, "end": 0.5,
-             "type": "word", "speaker_id": "speaker_0"},
-            ...
-        ]
-    }
+API: client.speech_to_text.convert(file=audio_file, model_id="scribe_v1")
+Cost: ~$0.005/min (or ~280 credits/min on ElevenLabs)
 
 TODO:
-    - transcribe(audio_path) -> dict  (full result with transcript + segments)
-    - _call_api(audio_path) -> dict   (raw API response)
-    - _parse_diarization(words) -> list[dict]  (group words into speaker segments)
-    - _assign_speakers(segments, direction) -> list[dict]  (label Agent vs Customer)
-    - _format_transcript(segments) -> str  (readable format with timestamps)
-    - _calculate_cost(duration_minutes) -> float
+- Copy my working ElevenLabsSTTAgent
+- Add error handling
+- Add batch processing
 """
 
-import os
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional
+import time
 
-# import httpx   # TODO: Uncomment when implementing
 
+class ElevenLabsSTTAgent:
+    """Agent: Speech-to-Text cu ElevenLabs"""
 
-class ElevenLabsAgent:
-    """
-    Transcribes audio with speaker diarization via ElevenLabs.
-
-    Usage:
-        agent = ElevenLabsAgent(config)
-        result = agent.transcribe("data/audio/call_001.mp3")
-        print(result['formatted_transcript'])
-        print(f"Cost: ${result['cost_usd']:.4f}")
-
-    Config keys (from config/agents.yaml):
-        elevenlabs.model            -> "scribe_v1"
-        elevenlabs.diarization      -> True
-        elevenlabs.cost_per_minute  -> 0.005
-
-    Env vars (from .env):
-        ELEVENLABS_API_KEY
-    """
-
-    API_URL = "https://api.elevenlabs.io/v1/speech-to-text"
-
-    def __init__(self, config: dict):
+    def __init__(self, client):
         """
         TODO:
-            - Read ELEVENLABS_API_KEY from os.environ
-            - Store config (model, cost_per_minute)
-        """
-        # TODO: Implement
-        pass
+        - Store ElevenLabs client instance
 
-    def transcribe(self, audio_path: str, call_direction: str = "Outbound") -> dict:
+        Usage:
+            from elevenlabs import ElevenLabs
+            client = ElevenLabs(api_key=os.environ['ELEVENLABS_API_KEY'])
+            agent_stt = ElevenLabsSTTAgent(client)
         """
-        Transcribe an audio file with diarization.
+        self.client = client
+
+    def transcribe(self, audio_path: Path) -> str:
+        """
+        Transcribe a single audio file.
 
         TODO:
-            1. Validate file exists
-            2. Call ElevenLabs API -> raw_response
-            3. Parse diarization: group words by speaker
-            4. Assign speaker roles (Agent vs Customer)
-            5. Format readable transcript
-            6. Calculate cost
-            7. Save transcript to data/transcripts/{call_id}.json
-            8. Return result dict:
-                {
-                    'full_text': str,
-                    'formatted_transcript': str,
-                    'segments': [
-                        {'speaker': 'Agent', 'text': '...', 'start': 0.0, 'end': 5.2},
-                        {'speaker': 'Customer', 'text': '...', 'start': 5.3, 'end': 12.1},
-                        ...
-                    ],
-                    'language': str,
-                    'duration_minutes': float,
-                    'cost_usd': float
-                }
+        - Open audio file in binary mode
+        - Call self.client.speech_to_text.convert(
+              file=audio_file,
+              model_id="scribe_v1"
+          )
+        - Return result.text.strip()
+
+        My working code:
+            with open(audio_path, "rb") as audio_file:
+                result = self.client.speech_to_text.convert(
+                    file=audio_file,
+                    model_id="scribe_v1"
+                )
+            return result.text.strip()
         """
         # TODO: Implement
         pass
 
-    def _call_api(self, audio_path: str) -> dict:
+    def transcribe_batch(self, audio_files: List[Path]) -> Dict[str, Dict]:
         """
-        Send audio to ElevenLabs Speech-to-Text API.
+        Transcribe multiple files, track progress and costs.
 
         TODO:
-            Request:
-                POST https://api.elevenlabs.io/v1/speech-to-text
-                Headers: {"xi-api-key": api_key}
-                Body (multipart/form-data):
-                    file: audio file
-                    model_id: "scribe_v1"
-                    language_code: "eng"
-                    diarize: "true"
-                    tag_audio_events: "true"
+        - For each file:
+            - Get duration (for cost estimate)
+            - Print progress: "Transcribing X of Y..."
+            - Call self.transcribe(audio_path)
+            - Track: transcript, duration, process_time, credits_used, status
+        - Handle errors per-file (don't stop batch)
+        - Handle quota_exceeded (stop batch)
+        - Return dict: {filename: {transcript, duration, credits_used, status}}
 
-            - Open file in binary mode
-            - Send with httpx.post()
-            - Check response.status_code == 200
-            - Return response.json()
-            - Raise on error (log details)
+        My working pattern:
+            transcripts = {}
+            for audio_path in processable:
+                start = time.time()
+                try:
+                    transcript = agent_stt.transcribe(audio_path)
+                    elapsed = time.time() - start
+                    transcripts[audio_path.name] = {
+                        "path": audio_path,
+                        "transcript": transcript,
+                        "duration": duration,
+                        "process_time": elapsed,
+                        "credits_used": estimated_credits,
+                        "status": "Success"
+                    }
+                except Exception as e:
+                    if 'quota_exceeded' in str(e).lower():
+                        break
+                    transcripts[audio_path.name] = {"status": f"Error: {e}"}
         """
         # TODO: Implement
         pass
 
-    def _parse_diarization(self, words: list[dict]) -> list[dict]:
-        """
-        Group consecutive words by speaker into segments.
 
-        TODO:
-            Input:  [{"text":"Hi","speaker_id":"speaker_0","start":0.0,"end":0.3}, ...]
-            Output: [{"speaker_id":"speaker_0","text":"Hi there","start":0.0,"end":1.2}, ...]
-
-            Algorithm:
-                - Initialize current_speaker, current_text, current_start
-                - For each word:
-                    - If same speaker: append to current_text
-                    - If different speaker: save segment, start new one
-                - Don't forget to save the last segment
-        """
-        # TODO: Implement
-        pass
-
-    def _assign_speakers(
-        self, segments: list[dict], call_direction: str = "Outbound"
-    ) -> list[dict]:
-        """
-        Label speaker_ids as "Agent" or "Customer".
-
-        TODO:
-            Heuristic:
-                - Outbound call: first speaker = Agent (they initiated)
-                - Inbound call: first speaker = Customer (they called in)
-            - Map speaker_0 and speaker_1 to roles
-            - Replace speaker_id with speaker role in each segment
-            - Return updated segments
-        """
-        # TODO: Implement
-        pass
-
-    def _format_transcript(self, segments: list[dict]) -> str:
-        """
-        Create readable transcript with timestamps.
-
-        TODO:
-            Format:
-                [00:00:02] Agent: Hello, thank you for calling...
-                [00:00:08] Customer: Hi, I'm calling about...
-
-            - For each segment: f"[{timestamp}] {speaker}: {text}"
-            - Convert seconds to HH:MM:SS
-            - Join with newlines
-        """
-        # TODO: Implement
-        pass
-
-    def _calculate_cost(self, duration_minutes: float) -> float:
-        """
-        TODO: return duration_minutes * self.cost_per_minute
-        """
-        # TODO: Implement
-        pass
+# TODO: Initialize like this:
+# from elevenlabs import ElevenLabs
+# client = ElevenLabs(api_key=os.environ['ELEVENLABS_API_KEY'])
+# agent_stt = ElevenLabsSTTAgent(client)

@@ -3,52 +3,60 @@ Main CLI Entry Point
 
 Usage:
     python src/main.py --date-from 2025-02-01 --date-to 2025-02-11
-    python src/main.py --call-id ABC123          # Process single call
-    python src/main.py --days-back 7             # Last 7 days
+    python src/main.py --local data/audio/call1.mp3 data/audio/call2.mp3
+    python src/main.py --folder data/audio
 
 TODO:
-    - Parse CLI arguments (argparse)
-    - Load config from config/agents.yaml
-    - Load .env credentials
-    - Create Pipeline instance
-    - Run pipeline
-    - Export results to CSV
-    - Print summary (calls processed, avg score, total cost)
+- Parse CLI arguments
+- Load config from config/agents.yaml and .env
+- Initialize all 4 agents
+- Run pipeline
+- Print summary
 """
 
 import argparse
+import os
 from pathlib import Path
-
-
-def parse_args():
-    """
-    TODO: Implement argument parser
-
-    Arguments to support:
-        --date-from     Start date (YYYY-MM-DD)
-        --date-to       End date (YYYY-MM-DD)
-        --days-back     Process last N days (default: 7)
-        --call-id       Process single call by ID
-        --export-csv    Export results to CSV (default: True)
-        --dry-run       Show what would be processed without doing it
-    """
-    # TODO: Implement
-    pass
 
 
 def main():
     """
-    TODO: Implement main flow:
-        1. args = parse_args()
-        2. config = load config/agents.yaml + .env
-        3. pipeline = Pipeline(config)
-        4. results = pipeline.run(date_from, date_to)
-        5. save results to data/evaluations/
-        6. export CSV to data/exports/
-        7. print summary
+    TODO:
+    1. Parse args
+    2. Load .env with python-dotenv
+    3. Load config/agents.yaml
+    4. Initialize agents:
+       - RingCentralAgent or AudioFileFinder (depends on args)
+       - ElevenLabsSTTAgent(elevenlabs_client)
+       - QualityManagementAgent(openai_client)
+       - IntegrationAgent(output_folder, webhook_url)
+    5. Create Pipeline(agent_01, agent_02, agent_03, agent_04)
+    6. If --local or --folder: pipeline.run_local(audio_files)
+       If --date-from: pipeline.run(date_from, date_to)
+    7. Print summary
+
+    Agent initialization pattern:
+        # ElevenLabs
+        from elevenlabs import ElevenLabs
+        el_client = ElevenLabs(api_key=os.environ['ELEVENLABS_API_KEY'])
+        agent_stt = ElevenLabsSTTAgent(el_client)
+
+        # OpenAI/OpenRouter
+        from openai import OpenAI
+        oa_client = OpenAI(
+            api_key=os.environ['OPENROUTER_API_KEY'],
+            base_url="https://openrouter.ai/api/v1"
+        )
+        agent_qm = QualityManagementAgent(oa_client)
     """
+    parser = argparse.ArgumentParser(description="Call Center QA System")
+    parser.add_argument('--date-from', help='Start date (YYYY-MM-DD)')
+    parser.add_argument('--date-to', help='End date (YYYY-MM-DD)')
+    parser.add_argument('--local', nargs='+', help='Local audio file paths')
+    parser.add_argument('--folder', help='Local audio folder path')
+    args = parser.parse_args()
+
     # TODO: Implement
-    pass
 
 
 if __name__ == "__main__":

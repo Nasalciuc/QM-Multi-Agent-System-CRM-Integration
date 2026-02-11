@@ -1,5 +1,9 @@
 ringcentral
+elevenlabs
+openai
 python-dotenv
 pyyaml
 httpx
-pydantic
+pandas
+openpyxl
+pydub
