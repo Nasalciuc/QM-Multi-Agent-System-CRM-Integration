@@ -12,12 +12,16 @@ import os
 import sys
 from pathlib import Path
 
-from utils import setup_logging, load_config, load_env
+from utils import setup_logging, load_config, load_env, validate_env
 from agents.agent_01_RingcentralCall import AudioFileFinder, RingCentralAgent
 from agents.agent_02_Transcribition import ElevenLabsSTTAgent
 from agents.agent_03_QualityManagement import QualityManagementAgent
 from agents.agent_04_ResultSending import IntegrationAgent
 from pipeline import Pipeline
+
+# Required env vars per mode
+_BASE_ENV_KEYS = ['ELEVENLABS_API_KEY', 'OPENROUTER_API_KEY']
+_RC_ENV_KEYS = ['RC_APP_CLIENT_ID', 'RC_APP_CLIENT_SECRET', 'RC_SERVER_URL', 'RC_USER_JWT']
 
 
 def main():
@@ -33,15 +37,21 @@ def main():
     logger = setup_logging()
     config = load_config()
 
+    # Validate required env vars upfront
+    required = list(_BASE_ENV_KEYS)
+    if args.date_from:
+        required.extend(_RC_ENV_KEYS)
+    validate_env(required)
+
     # Initialize Agent 2: ElevenLabs STT
     from elevenlabs import ElevenLabs
-    el_client = ElevenLabs(api_key=os.environ['ELEVENLABS_API_KEY'])
+    el_client = ElevenLabs(api_key=os.environ.get('ELEVENLABS_API_KEY'))
     agent_stt = ElevenLabsSTTAgent(el_client)
 
     # Initialize Agent 3: QualityManagement (OpenRouter)
     from openai import OpenAI
     oa_client = OpenAI(
-        api_key=os.environ['OPENROUTER_API_KEY'],
+        api_key=os.environ.get('OPENROUTER_API_KEY'),
         base_url="https://openrouter.ai/api/v1"
     )
     agent_qm = QualityManagementAgent(oa_client)

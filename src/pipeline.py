@@ -31,13 +31,14 @@ class Pipeline:
         results = pipeline.run_local(audio_files=[Path("data/audio/call1.mp3"), ...])
     """
 
-    def __init__(self, agent_01, agent_02, agent_03, agent_04):
+    def __init__(self, agent_01, agent_02, agent_03, agent_04, max_consecutive_failures: int = 3):
         """Store all 4 agents and initialize tracking."""
         self.audio_agent = agent_01      # RingCentralAgent or AudioFileFinder
         self.stt_agent = agent_02        # ElevenLabsSTTAgent
         self.qa_agent = agent_03         # QualityManagementAgent
         self.integration_agent = agent_04 # IntegrationAgent
         self.total_cost = 0.0
+        self.max_consecutive_failures = max_consecutive_failures
 
     def run(self, date_from: str, date_to: Optional[str] = None) -> List[Dict]:
         """Full pipeline: RingCentral -> ElevenLabs -> QA -> Export"""
@@ -99,6 +100,7 @@ class Pipeline:
         print("STEP 3: Evaluating with QualityManagementAgent...")
         evaluations = []
         eval_count = 0
+        consecutive_failures = 0
 
         for filename, data in transcripts.items():
             if data.get("status") != "Success":
@@ -108,6 +110,20 @@ class Pipeline:
             print(f"  Evaluating {eval_count}: {filename}...", end="\r")
 
             evaluation = self.qa_agent.evaluate_call(data["transcript"], filename)
+
+            # Circuit breaker: stop after N consecutive LLM failures
+            if "error" in evaluation:
+                consecutive_failures += 1
+                logger.warning(f"Evaluation failed for {filename}: {evaluation['error']} "
+                               f"({consecutive_failures}/{self.max_consecutive_failures} consecutive)")
+                if consecutive_failures >= self.max_consecutive_failures:
+                    logger.error(f"Circuit breaker triggered: {consecutive_failures} consecutive failures. "
+                                 f"Stopping evaluations.")
+                    print(f"\n  STOPPED: {consecutive_failures} consecutive failures (API may be down)")
+                    break
+                continue
+
+            consecutive_failures = 0  # Reset on success
             score_data = self.qa_agent.calculate_score(evaluation)
 
             cost = evaluation.get("cost_usd", 0)

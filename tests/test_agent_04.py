@@ -1,18 +1,171 @@
 """
-Tests for Agent 4: Integration & Delivery
-
-TODO:
-    - test_save_evaluation_json: Verify JSON file written
-    - test_send_webhook_success: Mock 200 response
-    - test_send_webhook_retry: Mock failures then success
-    - test_send_webhook_all_fail: Verify after 3 retries
-    - test_export_csv: Verify CSV with correct columns
-    - test_export_csv_all_24_scores: All criterion columns present
+Tests for Agent 4: Integration & Export
 """
+import sys
+import os
+import json
+import tempfile
+import shutil
+import pytest
+from unittest.mock import MagicMock, patch
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+from agents.agent_04_ResultSending import IntegrationAgent
 
 
-class TestIntegrationAgent:
-    """TODO: Implement tests"""
+# --- Fixtures ---
 
-    def test_placeholder(self):
-        assert True
+@pytest.fixture
+def tmp_output(tmp_path):
+    """Temporary output folder for exports."""
+    return str(tmp_path / "exports")
+
+
+@pytest.fixture
+def agent(tmp_output):
+    return IntegrationAgent(output_folder=tmp_output, webhook_url="")
+
+
+@pytest.fixture
+def agent_with_webhook(tmp_output):
+    return IntegrationAgent(output_folder=tmp_output, webhook_url="https://example.com/webhook")
+
+
+@pytest.fixture
+def sample_evaluations():
+    return [
+        {
+            "filename": "call1.mp3",
+            "transcript": "Agent: Hello\nClient: Hi",
+            "duration_min": 5.0,
+            "call_type": "First Call",
+            "overall_score": 75.0,
+            "score_data": {
+                "overall_score": 75.0,
+                "category_scores": {
+                    "phone_skills": {"score": 80.0, "count": 5},
+                    "sales_techniques": {"score": 70.0, "count": 8},
+                    "urgency_closing": {"score": 60.0, "count": 3},
+                    "soft_skills": {"score": 85.0, "count": 8},
+                },
+                "score_breakdown": {"yes_count": 10, "partial_count": 8, "no_count": 4, "na_count": 2}
+            },
+            "criteria": {
+                "greeting_prepared": {"score": "YES", "evidence": "Good greeting."},
+                "contact_info": {"score": "PARTIAL", "evidence": "Email only."},
+            },
+            "overall_assessment": "Decent call.",
+            "strengths": ["Good tone", "Professional", "Product knowledge"],
+            "improvements": ["Ask budget", "Create urgency", "Close better"],
+            "critical_gaps": [],
+            "model_used": "gpt-4o-2024-11-20",
+            "tokens_used": {"input": 5000, "output": 1500},
+            "cost_usd": 0.0275,
+            "status": "Success"
+        }
+    ]
+
+
+@pytest.fixture
+def criteria_ref():
+    return {
+        "greeting_prepared": {"category": "phone_skills", "weight": 1.0},
+        "contact_info": {"category": "phone_skills", "weight": 1.0},
+    }
+
+
+# --- Tests: JSON Export ---
+
+class TestJsonExport:
+
+    def test_export_json_creates_file(self, agent, sample_evaluations):
+        path = agent.export_json(sample_evaluations, "gpt-4o")
+        assert os.path.exists(path)
+        assert path.endswith(".json")
+
+    def test_export_json_content(self, agent, sample_evaluations):
+        path = agent.export_json(sample_evaluations, "gpt-4o")
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        assert "metadata" in data
+        assert "evaluations" in data
+        assert data["metadata"]["model"] == "gpt-4o"
+        assert data["metadata"]["calls"] == 1
+        assert len(data["evaluations"]) == 1
+
+    def test_export_json_custom_timestamp(self, agent, sample_evaluations):
+        path = agent.export_json(sample_evaluations, "gpt-4o", timestamp="20260101_120000")
+        assert "20260101_120000" in path
+
+
+# --- Tests: Full Export ---
+
+class TestExportAll:
+
+    def test_export_all_creates_files(self, agent, sample_evaluations, criteria_ref):
+        files = agent.export_all(sample_evaluations, criteria_ref)
+        assert "excel" in files
+        assert "csv_summary" in files
+        assert "csv_details" in files
+        assert "json" in files
+        # All files should exist
+        assert os.path.exists(files["excel"])
+        assert os.path.exists(files["csv_summary"])
+        assert os.path.exists(files["csv_details"])
+        assert os.path.exists(files["json"])
+
+    def test_export_all_consistent_timestamps(self, agent, sample_evaluations, criteria_ref):
+        """All exported files should share the same timestamp (fix for race condition)."""
+        files = agent.export_all(sample_evaluations, criteria_ref)
+        # Extract timestamps from filenames
+        excel_name = os.path.basename(files["excel"])
+        json_name = os.path.basename(files["json"])
+        csv_name = os.path.basename(files["csv_summary"])
+        # QM_YYYYMMDD_HHMMSS.xlsx / .json / _summary.csv
+        excel_ts = excel_name.replace("QM_", "").replace(".xlsx", "")
+        json_ts = json_name.replace("QM_", "").replace(".json", "")
+        csv_ts = csv_name.replace("QM_", "").replace("_summary.csv", "")
+        assert excel_ts == json_ts == csv_ts
+
+    def test_csv_has_correct_columns(self, agent, sample_evaluations, criteria_ref):
+        import pandas as pd
+        files = agent.export_all(sample_evaluations, criteria_ref)
+        df = pd.read_csv(files["csv_summary"])
+        expected_cols = {"File", "Type", "Score", "Phone", "Sales", "Closing", "Soft", "YES", "PARTIAL", "NO", "Cost"}
+        assert set(df.columns) == expected_cols
+
+
+# --- Tests: Webhook ---
+
+class TestWebhook:
+
+    def test_webhook_not_called_when_empty(self, agent):
+        result = agent.send_webhook({"event": "test"})
+        assert result is False
+
+    @patch("agents.agent_04_ResultSending.httpx.Client")
+    def test_webhook_success(self, mock_client_class, agent_with_webhook):
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_client.post.return_value = mock_response
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+
+        result = agent_with_webhook.send_webhook({"event": "test"})
+        assert result is True
+
+    @patch("agents.agent_04_ResultSending.httpx.Client")
+    def test_webhook_retry_on_failure(self, mock_client_class, agent_with_webhook):
+        """Should retry up to 3 times on failure."""
+        mock_client = MagicMock()
+        mock_client.post.side_effect = Exception("Connection error")
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+
+        result = agent_with_webhook.send_webhook({"event": "test"})
+        assert result is False
+        assert mock_client.post.call_count == 3

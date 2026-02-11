@@ -14,6 +14,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 import json
 import os
+import time
 import logging
 
 import pandas as pd
@@ -45,6 +46,7 @@ class IntegrationAgent:
         Export evaluations to Excel + CSV + JSON.
         Returns dict of filepaths: {"excel": ..., "csv_summary": ..., "csv_details": ..., "json": ...}
         """
+        # Use single timestamp for all exports to avoid filename drift
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         base = self.output_folder / f"QM_{timestamp}"
 
@@ -108,8 +110,8 @@ class IntegrationAgent:
         files["csv_details"] = csv_details_path
         logger.info(f"CSV: {csv_summary_path}, {csv_details_path}")
 
-        # JSON
-        json_path = self.export_json(evaluations, evaluations[0].get("model_used", "unknown") if evaluations else "unknown")
+        # JSON (reuse same timestamp)
+        json_path = self.export_json(evaluations, evaluations[0].get("model_used", "unknown") if evaluations else "unknown", timestamp=timestamp)
         files["json"] = json_path
 
         # Webhook (if configured)
@@ -127,9 +129,10 @@ class IntegrationAgent:
         print(f"\n  Exported: {excel_path}")
         return files
 
-    def export_json(self, evaluations: List[Dict], model_name: str) -> str:
+    def export_json(self, evaluations: List[Dict], model_name: str, timestamp: Optional[str] = None) -> str:
         """Export evaluations to JSON file. Returns filepath."""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        if timestamp is None:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         json_path = str(self.output_folder / f"QM_{timestamp}.json")
 
         total_cost = sum(e.get("cost_usd", 0) for e in evaluations)
@@ -166,8 +169,7 @@ class IntegrationAgent:
             except Exception as e:
                 logger.warning(f"Webhook attempt {attempt+1} failed: {e}")
 
-            import time
-            time.sleep(2 ** attempt)  # 1s, 2s, 4s
+            time.sleep(2 ** attempt)  # 1s, 2s, 4s exponential backoff
 
         logger.error("Webhook failed after 3 attempts")
         return False

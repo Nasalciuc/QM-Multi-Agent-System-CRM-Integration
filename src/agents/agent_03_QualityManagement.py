@@ -13,6 +13,12 @@ import json
 import time
 import re
 import logging
+import sys
+import os
+
+# Add parent dir to path so we can import utils
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils import load_criteria
 
 logger = logging.getLogger("qa_system")
 
@@ -27,167 +33,13 @@ class QualityManagementAgent:
         "output_per_1m": 10.00
     }
 
-    # ═══════════════════════════════════════════════════════════════
-    # ALL 24 EVALUATION CRITERIA
-    # ═══════════════════════════════════════════════════════════════
+    # Maximum transcript length (chars) to send to LLM (~30k tokens)
+    MAX_TRANSCRIPT_LENGTH = 120_000
 
-    EVALUATION_CRITERIA = {
-        # --- PHONE SKILLS (5 criteria) ---
-        "greeting_prepared": {
-            "description": "Was the agent prepared and timely greeted the client? Did the agent identify himself? Did the agent request the name of the client and use it? Did the agent thank the guest and ask how he could assist?",
-            "category": "phone_skills",
-            "weight": 1.0,
-            "first_call_only": False
-        },
-        "contact_info": {
-            "description": "Did the agent ask what will be the best way to reach the customer back? Did the agent spell back client's email and confirmed the phone number?",
-            "category": "phone_skills",
-            "weight": 1.0,
-            "first_call_only": False
-        },
-        "source_discovery": {
-            "description": "Did the agent ask how client found out about our website?",
-            "category": "phone_skills",
-            "weight": 0.5,
-            "first_call_only": True
-        },
-        "first_time_customer": {
-            "description": "Did the agent ask if this is customer's first interaction with someone from our company?",
-            "category": "phone_skills",
-            "weight": 1.0,
-            "first_call_only": True
-        },
-        "advertised_offer": {
-            "description": "Did the agent inform and clearly explain the details about our advertised offer from the website? (if applicable)",
-            "category": "phone_skills",
-            "weight": 0.8,
-            "first_call_only": False
-        },
-
-        # --- SALES TECHNIQUES (8 criteria) ---
-        "flexibility_dates": {
-            "description": "Did the agent ask about flexibility (travel dates/airports/preferred departure/arrival times)?",
-            "category": "sales_techniques",
-            "weight": 1.0,
-            "first_call_only": False
-        },
-        "airline_preferences": {
-            "description": "Did the agent ask about airline/other preferences? Development in case customer has preferences: reason (miles or experience)",
-            "category": "sales_techniques",
-            "weight": 1.0,
-            "first_call_only": False
-        },
-        "product_presentation": {
-            "description": "Product presentation: Product features (value), Value first / price last",
-            "category": "sales_techniques",
-            "weight": 1.5,
-            "first_call_only": False
-        },
-        "budget_inquiry": {
-            "description": "Did the agent ask about clients budget? (price expectations)",
-            "category": "sales_techniques",
-            "weight": 1.0,
-            "first_call_only": False
-        },
-        "online_prices": {
-            "description": "Did the agent ask if customer checked online prices?",
-            "category": "sales_techniques",
-            "weight": 0.8,
-            "first_call_only": False
-        },
-        "fare_guarantee": {
-            "description": "Did the agent offer fare guarantee and the ability to beat the prices?",
-            "category": "sales_techniques",
-            "weight": 1.0,
-            "first_call_only": False
-        },
-        "objection_handling": {
-            "description": "Good objection handling (if applicable)",
-            "category": "sales_techniques",
-            "weight": 1.2,
-            "first_call_only": False
-        },
-        "next_call_scheduling": {
-            "description": "Did the agent set a time for the next conversation with the client? Did the agent call at the agreed time?",
-            "category": "sales_techniques",
-            "weight": 1.0,
-            "first_call_only": False
-        },
-
-        # --- URGENCY & CLOSING (3 criteria) ---
-        "urgency_creation": {
-            "description": "Did the agent create the sense of urgency based on seat availability and advance purchase?",
-            "category": "urgency_closing",
-            "weight": 1.2,
-            "first_call_only": False
-        },
-        "additional_assistance": {
-            "description": "Offers additional assistance before closing the interaction (Mr. Smith, now that I have your flight package confirmed, is there any other information I can provide you?)",
-            "category": "urgency_closing",
-            "weight": 0.8,
-            "first_call_only": False
-        },
-        "thank_you_closing": {
-            "description": "Did the agent thank the caller for calling Buy Business Class?",
-            "category": "urgency_closing",
-            "weight": 0.8,
-            "first_call_only": False
-        },
-
-        # --- SOFT SKILLS (8 criteria) ---
-        "straight_line_system": {
-            "description": "Did the agent use the straight line persuasion system? Having control over the call (every time the customer tries to take the conversation away from the sale by talking about something irrelevant you quickly bring it right back)",
-            "category": "soft_skills",
-            "weight": 1.5,
-            "first_call_only": False
-        },
-        "consultative_expertise": {
-            "description": "Did the agent sound consultative and display expertise?",
-            "category": "soft_skills",
-            "weight": 1.5,
-            "first_call_only": False
-        },
-        "positive_tone": {
-            "description": "Upbeat & Positive Tone, uses appropriate vocal inflection / Positive Verbiage using a variety of 'Power Words'",
-            "category": "soft_skills",
-            "weight": 1.0,
-            "first_call_only": False
-        },
-        "authenticity": {
-            "description": "Responds to guest questions and conversation with /Authenticity/Appropriateness",
-            "category": "soft_skills",
-            "weight": 1.0,
-            "first_call_only": False
-        },
-        "pace_matching": {
-            "description": "Pace is appropriate and easy to understand, and matches the guest pace (agent is receptive to guests pace)",
-            "category": "soft_skills",
-            "weight": 0.8,
-            "first_call_only": False
-        },
-        "answers_questions": {
-            "description": "Answers questions/or offers to locate unknown information",
-            "category": "soft_skills",
-            "weight": 1.0,
-            "first_call_only": False
-        },
-        "call_leadership": {
-            "description": "Leads the guest through the call, makes the transaction easy for the guest Talking vs Listening percentage",
-            "category": "soft_skills",
-            "weight": 1.2,
-            "first_call_only": False
-        },
-        "accurate_information": {
-            "description": "Provides accurate information",
-            "category": "soft_skills",
-            "weight": 1.5,
-            "first_call_only": False
-        }
-    }
-
-    def __init__(self, openai_client):
+    def __init__(self, openai_client, criteria_path: str = "config/qa_criteria.yaml"):
         """
         Initialize with OpenAI client (can point to OpenRouter).
+        Loads evaluation criteria from YAML (single source of truth).
 
         Usage:
             from openai import OpenAI
@@ -197,6 +49,7 @@ class QualityManagementAgent:
         """
         self.client = openai_client
         self.model = self.OPENAI_MODEL
+        self.EVALUATION_CRITERIA = load_criteria(criteria_path)
         print(f"QualityManagementAgent initialized | Model: {self.model} | Criteria: {len(self.EVALUATION_CRITERIA)}")
 
     def detect_call_type(self, filename: str) -> Tuple[bool, str]:
@@ -213,6 +66,13 @@ class QualityManagementAgent:
         Returns evaluation dict with criteria scores, evidence, assessment.
         """
         is_followup, call_type = self.detect_call_type(filename)
+
+        # Truncate transcript if too long to avoid exceeding LLM context window
+        truncated = False
+        if len(transcript) > self.MAX_TRANSCRIPT_LENGTH:
+            transcript = transcript[:self.MAX_TRANSCRIPT_LENGTH]
+            truncated = True
+            logger.warning(f"Transcript truncated for {filename}: {len(transcript)} chars -> {self.MAX_TRANSCRIPT_LENGTH}")
 
         # Filter criteria: skip first_call_only for follow-ups
         applicable_criteria = {}
@@ -330,6 +190,8 @@ Return JSON with this exact structure:
                 evaluation["tokens_used"] = {"input": input_tokens, "output": output_tokens}
                 evaluation["cost_usd"] = round(cost_usd, 6)
                 evaluation["eval_time_seconds"] = round(elapsed, 2)
+                if truncated:
+                    evaluation["truncated"] = True
 
                 logger.info(f"Evaluated: {filename} | {call_type} | {criteria_count} criteria | ${cost_usd:.4f} | {elapsed:.1f}s")
                 return evaluation
@@ -343,8 +205,9 @@ Return JSON with this exact structure:
 
             except Exception as e:
                 if attempt < max_retries:
-                    logger.warning(f"API error (attempt {attempt+1}): {e}. Retrying...")
-                    time.sleep(2)
+                    wait = 2 ** (attempt + 1)  # 2s, 4s exponential backoff
+                    logger.warning(f"API error (attempt {attempt+1}): {e}. Retrying in {wait}s...")
+                    time.sleep(wait)
                     continue
                 logger.error(f"Evaluation failed for {filename}: {e}")
                 return {"error": str(e), "call_type": call_type}
@@ -425,22 +288,49 @@ Return JSON with this exact structure:
         }
 
     def calculate_listening_ratio(self, transcript: str) -> Dict[str, float]:
-        """Estimate agent vs client talking percentage from transcript."""
+        """Estimate agent vs client talking percentage from transcript.
+        Supports ElevenLabs Scribe format (Speaker 0/1) and labeled format (Agent:/Client:)."""
         lines = transcript.strip().split("\n")
         agent_words = 0
         client_words = 0
 
+        # ElevenLabs speaker labels
+        agent_prefixes = ["agent:", "representative:", "rep:", "advisor:", "speaker 0:", "speaker 1:"]
+        client_prefixes = ["client:", "customer:", "caller:", "guest:", "speaker 2:", "speaker 3:"]
+
+        # Auto-detect: if transcript uses "Speaker X:" format, assign first speaker as agent
+        first_speaker = None
+        for line in lines:
+            line_stripped = line.lower().strip()
+            match = re.match(r'^(speaker \d+):', line_stripped)
+            if match:
+                first_speaker = match.group(1)
+                break
+
         for line in lines:
             line_lower = line.lower().strip()
             word_count = len(line.split())
+            if not line_lower or word_count == 0:
+                continue
 
-            if any(line_lower.startswith(prefix) for prefix in ["agent:", "representative:", "rep:", "advisor:"]):
+            # Check explicit labels first
+            is_agent = any(line_lower.startswith(p) for p in agent_prefixes[:4])
+            is_client = any(line_lower.startswith(p) for p in client_prefixes[:4])
+
+            # Handle Speaker N: format — first speaker = agent
+            if not is_agent and not is_client:
+                speaker_match = re.match(r'^(speaker \d+):', line_lower)
+                if speaker_match:
+                    if first_speaker and speaker_match.group(1) == first_speaker:
+                        is_agent = True
+                    else:
+                        is_client = True
+
+            if is_agent:
                 agent_words += word_count
-            elif any(line_lower.startswith(prefix) for prefix in ["client:", "customer:", "caller:", "guest:"]):
+            elif is_client:
                 client_words += word_count
-            else:
-                # Default to agent if no clear speaker label
-                agent_words += word_count
+            # Skip unlabeled lines instead of defaulting to agent
 
         total = agent_words + client_words
         if total == 0:
