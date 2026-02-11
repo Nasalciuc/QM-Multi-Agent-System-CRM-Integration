@@ -1,9 +1,21 @@
-ringcentral
-elevenlabs
-openai
-python-dotenv
-pyyaml
-httpx
-pandas
-openpyxl
-pydub
+# === QM Multi Agent System - Dependencies ===
+# Python 3.11+ required
+
+# --- Agent 1: RingCentral Audio Retrieval ---
+ringcentral>=0.9.2,<1.0
+
+# --- Agent 2: ElevenLabs Speech-to-Text ---
+elevenlabs>=2.35.0,<3.0
+
+# --- Agent 3: Quality Management (OpenAI/OpenRouter) ---
+openai>=2.20.0,<3.0
+
+# --- Agent 4: Integration & Export ---
+pandas>=3.0.0,<4.0
+openpyxl>=3.1.5,<4.0
+httpx>=0.28.0,<1.0
+
+# --- Shared utilities ---
+python-dotenv>=1.2.0,<2.0
+pyyaml>=6.0,<7.0
+pydub>=0.25.1,<1.0

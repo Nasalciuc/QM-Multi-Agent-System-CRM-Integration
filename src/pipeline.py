@@ -39,11 +39,11 @@ class Pipeline:
         self.integration_agent = agent_04 # IntegrationAgent
         self.total_cost = 0.0
 
-    def run(self, date_from: str, date_to: str) -> List[Dict]:
+    def run(self, date_from: str, date_to: Optional[str] = None) -> List[Dict]:
         """Full pipeline: RingCentral -> ElevenLabs -> QA -> Export"""
         print(f"\n{'='*60}")
         print(f"  QA Pipeline: RingCentral Mode")
-        print(f"  Period: {date_from} to {date_to}")
+        print(f"  Period: {date_from} to {date_to or 'now'}")
         print(f"{'='*60}\n")
 
         pipeline_start = time.time()

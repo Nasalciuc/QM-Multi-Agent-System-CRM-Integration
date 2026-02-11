@@ -13,10 +13,10 @@ import sys
 from pathlib import Path
 
 from utils import setup_logging, load_config, load_env
-from agents.agent_01_ringcentral import AudioFileFinder, RingCentralAgent
-from agents.agent_02_elevenlabs import ElevenLabsSTTAgent
-from agents.agent_03_openrouter import QualityManagementAgent
-from agents.agent_04_integration import IntegrationAgent
+from agents.agent_01_RingcentralCall import AudioFileFinder, RingCentralAgent
+from agents.agent_02_Transcribition import ElevenLabsSTTAgent
+from agents.agent_03_QualityManagement import QualityManagementAgent
+from agents.agent_04_ResultSending import IntegrationAgent
 from pipeline import Pipeline
 
 
@@ -100,7 +100,7 @@ def main():
         )
 
         pipeline = Pipeline(agent_rc, agent_stt, agent_qm, agent_integration)
-        results = pipeline.run(args.date_from, args.date_to or args.date_from)
+        results = pipeline.run(args.date_from, args.date_to)
 
     else:
         parser.print_help()
