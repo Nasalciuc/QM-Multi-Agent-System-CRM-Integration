@@ -15,7 +15,7 @@ from pathlib import Path
 import time
 import logging
 
-logger = logging.getLogger("qa_system")
+logger = logging.getLogger("qa_system.pipeline")
 
 
 class Pipeline:

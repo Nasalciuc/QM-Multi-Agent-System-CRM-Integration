@@ -1,31 +1,48 @@
 """
 Utility Functions
 
-Shared helpers used across agents.
+Shared helpers used across agents:
+  - setup_logging: YAML-based logging config via dictConfig
+  - load_config: Load YAML config files
+  - load_env: Load .env file
+  - validate_env: Check required environment variables
+  - load_criteria: Load QA criteria from YAML
 """
 
-import json
 import logging
+import logging.config
 import os
 import yaml
 from pathlib import Path
-from typing import Any, List
+from typing import List
 from dotenv import load_dotenv
 
 
-def setup_logging(level: str = "INFO") -> logging.Logger:
-    """Configure logging with console handler."""
-    logger = logging.getLogger("qa_system")
-    logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+def setup_logging(config_path: str = "config/logging.yaml", default_level: str = "INFO") -> logging.Logger:
+    """Configure logging from YAML config using dictConfig.
 
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setLevel(getattr(logging, level.upper(), logging.INFO))
-        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+    Falls back to basic console logging if config file is missing.
+    """
+    path = Path(config_path)
+    if path.exists():
+        with open(path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f)
 
-    return logger
+        # Ensure log directory exists for file handler
+        for handler in config.get("handlers", {}).values():
+            if "filename" in handler:
+                Path(handler["filename"]).parent.mkdir(parents=True, exist_ok=True)
+
+        logging.config.dictConfig(config)
+    else:
+        # Fallback: basic console logging
+        logging.basicConfig(
+            level=getattr(logging, default_level.upper(), logging.INFO),
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%H:%M:%S",
+        )
+
+    return logging.getLogger("qa_system")
 
 
 def load_config(config_path: str = "config/agents.yaml") -> dict:
@@ -52,20 +69,6 @@ def validate_env(required_keys: List[str]) -> None:
             print(f"  - {key}")
         print(f"\nSet them in .env or export them before running.")
         raise SystemExit(1)
-
-
-def save_json(data: Any, filepath: str) -> None:
-    """Write JSON with indent=2, ensure_ascii=False."""
-    path = Path(filepath)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
-
-def load_json(filepath: str) -> Any:
-    """Read and return JSON file contents."""
-    with open(filepath, "r", encoding="utf-8") as f:
-        return json.load(f)
 
 
 def load_criteria(config_path: str = "config/qa_criteria.yaml") -> dict:

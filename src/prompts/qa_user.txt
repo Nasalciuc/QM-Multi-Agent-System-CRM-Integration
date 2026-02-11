@@ -1,0 +1,21 @@
+Evaluate this {call_type} transcript:
+
+---TRANSCRIPT START---
+{transcript}
+---TRANSCRIPT END---
+
+Evaluate against these {criteria_count} criteria:
+
+{criteria_text}
+
+Return JSON with this exact structure:
+{{
+    "criteria": {{
+        "{first_criterion_key}": {{"score": "YES|PARTIAL|NO|N/A", "evidence": "..."}},
+        ... (all {criteria_count} criteria)
+    }},
+    "overall_assessment": "2-3 sentence summary",
+    "strengths": ["strength1", "strength2", "strength3"],
+    "improvements": ["improvement1", "improvement2", "improvement3"],
+    "critical_gaps": ["gap1", ...]
+}}

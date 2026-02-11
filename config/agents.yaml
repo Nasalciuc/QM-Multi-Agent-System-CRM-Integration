@@ -15,6 +15,7 @@ elevenlabs:
   credits_per_minute: 280      # ~280 credits/min on ElevenLabs
   cost_per_minute: 0.005       # $0.005/min
   output_folder: "data/transcripts"
+  persist_transcripts: true    # Save transcripts to disk after transcription
 
 openrouter:
   model: "gpt-4o-2024-11-20"  # Primary model (via OpenRouter)
@@ -31,6 +32,9 @@ integration:
   webhook_url: ""              # Set via WEBHOOK_URL env var
   retry_attempts: 3
   output_folder: "data/evaluations"
+
+pipeline:
+  max_consecutive_failures: 3  # Circuit breaker: stop after N consecutive LLM failures
 
 audio_extensions:
   - ".mp3"

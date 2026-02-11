@@ -1,24 +1,23 @@
 """
 Tests for Agent 4: Integration & Export
+
+Updated to import from agent_04_export (was agent_04_ResultSending).
 """
 import sys
 import os
 import json
-import tempfile
-import shutil
 import pytest
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from agents.agent_04_ResultSending import IntegrationAgent
+from agents.agent_04_export import IntegrationAgent
 
 
 # --- Fixtures ---
 
 @pytest.fixture
 def tmp_output(tmp_path):
-    """Temporary output folder for exports."""
     return str(tmp_path / "exports")
 
 
@@ -49,7 +48,7 @@ def sample_evaluations():
                     "urgency_closing": {"score": 60.0, "count": 3},
                     "soft_skills": {"score": 85.0, "count": 8},
                 },
-                "score_breakdown": {"yes_count": 10, "partial_count": 8, "no_count": 4, "na_count": 2}
+                "score_breakdown": {"yes_count": 10, "partial_count": 8, "no_count": 4, "na_count": 2},
             },
             "criteria": {
                 "greeting_prepared": {"score": "YES", "evidence": "Good greeting."},
@@ -62,7 +61,7 @@ def sample_evaluations():
             "model_used": "gpt-4o-2024-11-20",
             "tokens_used": {"input": 5000, "output": 1500},
             "cost_usd": 0.0275,
-            "status": "Success"
+            "status": "Success",
         }
     ]
 
@@ -109,20 +108,15 @@ class TestExportAll:
         assert "csv_summary" in files
         assert "csv_details" in files
         assert "json" in files
-        # All files should exist
-        assert os.path.exists(files["excel"])
-        assert os.path.exists(files["csv_summary"])
-        assert os.path.exists(files["csv_details"])
-        assert os.path.exists(files["json"])
+        for key in files:
+            assert os.path.exists(files[key])
 
     def test_export_all_consistent_timestamps(self, agent, sample_evaluations, criteria_ref):
-        """All exported files should share the same timestamp (fix for race condition)."""
+        """All exported files should share the same timestamp."""
         files = agent.export_all(sample_evaluations, criteria_ref)
-        # Extract timestamps from filenames
         excel_name = os.path.basename(files["excel"])
         json_name = os.path.basename(files["json"])
         csv_name = os.path.basename(files["csv_summary"])
-        # QM_YYYYMMDD_HHMMSS.xlsx / .json / _summary.csv
         excel_ts = excel_name.replace("QM_", "").replace(".xlsx", "")
         json_ts = json_name.replace("QM_", "").replace(".json", "")
         csv_ts = csv_name.replace("QM_", "").replace("_summary.csv", "")
@@ -144,7 +138,7 @@ class TestWebhook:
         result = agent.send_webhook({"event": "test"})
         assert result is False
 
-    @patch("agents.agent_04_ResultSending.httpx.Client")
+    @patch("agents.agent_04_export.httpx.Client")
     def test_webhook_success(self, mock_client_class, agent_with_webhook):
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -157,7 +151,7 @@ class TestWebhook:
         result = agent_with_webhook.send_webhook({"event": "test"})
         assert result is True
 
-    @patch("agents.agent_04_ResultSending.httpx.Client")
+    @patch("agents.agent_04_export.httpx.Client")
     def test_webhook_retry_on_failure(self, mock_client_class, agent_with_webhook):
         """Should retry up to 3 times on failure."""
         mock_client = MagicMock()

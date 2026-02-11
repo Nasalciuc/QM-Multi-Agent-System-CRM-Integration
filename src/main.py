@@ -13,10 +13,11 @@ import sys
 from pathlib import Path
 
 from utils import setup_logging, load_config, load_env, validate_env
-from agents.agent_01_RingcentralCall import AudioFileFinder, RingCentralAgent
-from agents.agent_02_Transcribition import ElevenLabsSTTAgent
-from agents.agent_03_QualityManagement import QualityManagementAgent
-from agents.agent_04_ResultSending import IntegrationAgent
+from agents.agent_01_audio import AudioFileFinder, RingCentralAgent
+from agents.agent_02_transcription import ElevenLabsSTTAgent
+from agents.agent_03_evaluation import QualityManagementAgent
+from agents.agent_04_export import IntegrationAgent
+from core.model_factory import ModelFactory
 from pipeline import Pipeline
 
 # Required env vars per mode
@@ -45,16 +46,17 @@ def main():
 
     # Initialize Agent 2: ElevenLabs STT
     from elevenlabs import ElevenLabs
+    el_config = config.get("elevenlabs", {})
     el_client = ElevenLabs(api_key=os.environ.get('ELEVENLABS_API_KEY'))
-    agent_stt = ElevenLabsSTTAgent(el_client)
-
-    # Initialize Agent 3: QualityManagement (OpenRouter)
-    from openai import OpenAI
-    oa_client = OpenAI(
-        api_key=os.environ.get('OPENROUTER_API_KEY'),
-        base_url="https://openrouter.ai/api/v1"
+    agent_stt = ElevenLabsSTTAgent(
+        el_client,
+        persist_transcripts=el_config.get("persist_transcripts", True),
+        transcripts_folder=el_config.get("output_folder", "data/transcripts"),
     )
-    agent_qm = QualityManagementAgent(oa_client)
+
+    # Initialize Agent 3: QualityManagement (with ModelFactory fallback)
+    model_factory = ModelFactory()
+    agent_qm = QualityManagementAgent(model_factory)
 
     # Initialize Agent 4: Integration
     integration_config = config.get("integration", {})

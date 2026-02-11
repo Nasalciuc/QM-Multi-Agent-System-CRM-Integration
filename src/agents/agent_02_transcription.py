@@ -4,6 +4,8 @@ Agent 2: ElevenLabs Speech-to-Text
 Purpose: Transcribe audio files using ElevenLabs Scribe v1
 API: client.speech_to_text.convert(file=audio_file, model_id="scribe_v1")
 Cost: ~$0.005/min (or ~280 credits/min on ElevenLabs)
+
+Now persists transcripts to data/transcripts/ after successful transcription.
 """
 
 from pathlib import Path
@@ -11,18 +13,24 @@ from typing import Dict, List, Optional
 import time
 import logging
 
-logger = logging.getLogger("qa_system")
+logger = logging.getLogger("qa_system.agents")
 
 CREDITS_PER_MINUTE = 280
 COST_PER_MINUTE = 0.005
 
 
 class ElevenLabsSTTAgent:
-    """Agent: Speech-to-Text cu ElevenLabs"""
+    """Agent: Speech-to-Text with ElevenLabs"""
 
-    def __init__(self, client):
+    def __init__(self, client, persist_transcripts: bool = True,
+                 transcripts_folder: str = "data/transcripts"):
         """
         Initialize with ElevenLabs client.
+
+        Args:
+            client: ElevenLabs client instance.
+            persist_transcripts: Save transcripts to disk after transcription.
+            transcripts_folder: Directory to save transcript files.
 
         Usage:
             from elevenlabs import ElevenLabs
@@ -30,6 +38,10 @@ class ElevenLabsSTTAgent:
             agent_stt = ElevenLabsSTTAgent(client)
         """
         self.client = client
+        self.persist_transcripts = persist_transcripts
+        self.transcripts_folder = Path(transcripts_folder)
+        if self.persist_transcripts:
+            self.transcripts_folder.mkdir(parents=True, exist_ok=True)
         logger.info("ElevenLabsSTTAgent initialized | Model: scribe_v1")
 
     def transcribe(self, audio_path: Path) -> str:
@@ -40,6 +52,20 @@ class ElevenLabsSTTAgent:
                 model_id="scribe_v1"
             )
         return result.text.strip()
+
+    def _save_transcript(self, filename: str, transcript: str) -> Optional[Path]:
+        """Save transcript to disk as .txt file."""
+        if not self.persist_transcripts:
+            return None
+        try:
+            stem = Path(filename).stem
+            txt_path = self.transcripts_folder / f"{stem}.txt"
+            txt_path.write_text(transcript, encoding="utf-8")
+            logger.debug(f"Transcript saved: {txt_path}")
+            return txt_path
+        except Exception as e:
+            logger.warning(f"Failed to save transcript for {filename}: {e}")
+            return None
 
     def transcribe_batch(self, audio_files: List[Path]) -> Dict[str, Dict]:
         """
@@ -64,6 +90,9 @@ class ElevenLabsSTTAgent:
                 transcript = self.transcribe(audio_path)
                 elapsed = time.time() - start
 
+                # Persist transcript to disk
+                saved_path = self._save_transcript(filename, transcript)
+
                 transcripts[filename] = {
                     "path": audio_path,
                     "transcript": transcript,
@@ -71,9 +100,10 @@ class ElevenLabsSTTAgent:
                     "process_time": round(elapsed, 2),
                     "credits_used": estimated_credits,
                     "cost_usd": round(estimated_cost, 4),
-                    "status": "Success"
+                    "status": "Success",
+                    "transcript_path": str(saved_path) if saved_path else None,
                 }
-                logger.info(f"  OK: {filename} ({duration:.1f} min, {elapsed:.1f}s)")
+                logger.info(f"  OK: {filename} ({duration or 0:.1f} min, {elapsed:.1f}s)")
 
             except Exception as e:
                 elapsed = time.time() - start
@@ -83,7 +113,7 @@ class ElevenLabsSTTAgent:
                     logger.error(f"Quota exceeded! Stopping batch at {i}/{total}")
                     transcripts[filename] = {
                         "path": audio_path,
-                        "status": f"Error: Quota exceeded",
+                        "status": "Error: Quota exceeded",
                         "duration": duration
                     }
                     break

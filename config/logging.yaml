@@ -1,0 +1,62 @@
+# =============================================================================
+# Logging Configuration — loaded via logging.config.dictConfig()
+# =============================================================================
+# Two handlers: console (always) + file (rotated daily)
+# Per-module log levels for fine-grained control
+
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  console:
+    format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    datefmt: "%H:%M:%S"
+  file:
+    format: "%(asctime)s [%(levelname)s] %(name)s [%(filename)s:%(lineno)d] %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: console
+    stream: ext://sys.stdout
+
+  file:
+    class: logging.handlers.RotatingFileHandler
+    level: DEBUG
+    formatter: file
+    filename: data/qa_system.log
+    maxBytes: 10485760          # 10 MB
+    backupCount: 5
+    encoding: utf-8
+
+root:
+  level: INFO
+  handlers: [console, file]
+
+loggers:
+  qa_system:
+    level: INFO
+    handlers: [console, file]
+    propagate: false
+
+  qa_system.core:
+    level: DEBUG
+    handlers: [console, file]
+    propagate: false
+
+  qa_system.processing:
+    level: INFO
+    handlers: [console, file]
+    propagate: false
+
+  qa_system.inference:
+    level: DEBUG
+    handlers: [console, file]
+    propagate: false
+
+  qa_system.agents:
+    level: INFO
+    handlers: [console, file]
+    propagate: false

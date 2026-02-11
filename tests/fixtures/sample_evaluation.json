@@ -1,0 +1,40 @@
+{
+  "criteria": {
+    "greeting_prepared": {"score": "YES", "evidence": "Agent greeted professionally and identified herself."},
+    "contact_info": {"score": "YES", "evidence": "Agent confirmed email and phone number."},
+    "source_discovery": {"score": "YES", "evidence": "Agent asked how client found the company."},
+    "first_time_customer": {"score": "YES", "evidence": "Agent asked if this was client's first interaction."},
+    "advertised_offer": {"score": "PARTIAL", "evidence": "Agent mentioned pricing but did not reference a specific advertised offer."},
+    "flexibility_dates": {"score": "YES", "evidence": "Agent asked about date flexibility."},
+    "airline_preferences": {"score": "YES", "evidence": "Agent asked about airline preferences and miles."},
+    "product_presentation": {"score": "YES", "evidence": "Agent presented business class features and value proposition."},
+    "budget_inquiry": {"score": "YES", "evidence": "Agent asked about budget expectations."},
+    "online_prices": {"score": "YES", "evidence": "Agent asked if client checked online prices."},
+    "fare_guarantee": {"score": "YES", "evidence": "Agent offered fare guarantee with $50 beat promise."},
+    "objection_handling": {"score": "YES", "evidence": "Agent handled the discussion-with-wife objection well."},
+    "next_call_scheduling": {"score": "YES", "evidence": "Agent scheduled follow-up call for 3 PM tomorrow."},
+    "urgency_creation": {"score": "YES", "evidence": "Agent mentioned seats filling up and advance purchase benefits."},
+    "additional_assistance": {"score": "YES", "evidence": "Agent offered hotel and ground transportation help."},
+    "thank_you_closing": {"score": "YES", "evidence": "Agent thanked caller for calling Buy Business Class."},
+    "straight_line_system": {"score": "YES", "evidence": "Agent maintained focus on the sale throughout the call."},
+    "consultative_expertise": {"score": "YES", "evidence": "Agent demonstrated deep product knowledge."},
+    "positive_tone": {"score": "YES", "evidence": "Agent maintained upbeat and professional tone."},
+    "authenticity": {"score": "YES", "evidence": "Agent responses were genuine and appropriate."},
+    "pace_matching": {"score": "PARTIAL", "evidence": "Agent spoke slightly fast at times."},
+    "answers_questions": {"score": "YES", "evidence": "Agent answered all questions thoroughly."},
+    "call_leadership": {"score": "YES", "evidence": "Agent led the conversation effectively."},
+    "accurate_information": {"score": "YES", "evidence": "All information provided was accurate."}
+  },
+  "overall_assessment": "Excellent first call. The agent demonstrated strong sales skills, built good rapport, and followed the recommended call structure. Minor areas for improvement include referencing specific website offers and matching client's speaking pace.",
+  "strengths": [
+    "Thorough discovery process covering dates, airports, airlines, and budget",
+    "Strong value presentation with fare guarantee and urgency creation",
+    "Professional closing with scheduled follow-up"
+  ],
+  "improvements": [
+    "Reference specific advertised offers from the website",
+    "Match client's speaking pace more closely",
+    "Could have explored additional travel needs earlier"
+  ],
+  "critical_gaps": []
+}

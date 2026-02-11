@@ -1,5 +1,5 @@
 """
-Agent 1: RingCentral Audio Retrieval
+Agent 1: Audio Retrieval
 
 Purpose: Download call recordings using Official RingCentral SDK
 Two classes:
@@ -8,12 +8,12 @@ Two classes:
 """
 
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 import os
 import time
 import logging
 
-logger = logging.getLogger("qa_system")
+logger = logging.getLogger("qa_system.agents")
 
 
 class AudioFileFinder:

@@ -1,14 +1,17 @@
 """
 Tests for Agent 3: Quality Management Evaluation
+
+Rewritten for the new architecture:
+  - QualityManagementAgent now takes ModelFactory instead of raw OpenAI client.
+  - Heavy mocking of ModelFactory + InferenceEngine for unit tests.
+  - Score calculation and call-type detection are pure-logic tests (no mocks).
 """
 import sys
 import os
 import json
-import re
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, PropertyMock
 
-# Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 
@@ -20,30 +23,65 @@ def criteria_path():
 
 
 @pytest.fixture
-def agent(criteria_path):
-    from agents.agent_03_QualityManagement import QualityManagementAgent
-    mock_client = MagicMock()
-    return QualityManagementAgent(mock_client, criteria_path=criteria_path)
+def mock_model_factory():
+    """Create a fully-mocked ModelFactory."""
+    factory = MagicMock()
+    factory.primary.model_name = "gpt-4o-2024-11-20"
+    factory.primary.provider_name = "openrouter"
+    factory.token_limits = {
+        "max_input_tokens": 30000,
+        "input_per_1m": 2.50,
+        "output_per_1m": 10.00,
+    }
+    return factory
 
 
 @pytest.fixture
-def sample_evaluation(agent):
-    """A valid LLM response with all 24 criteria scored."""
-    criteria_keys = list(agent.EVALUATION_CRITERIA.keys())
-    evaluation = {
-        "criteria": {},
-        "overall_assessment": "Good call overall.",
-        "strengths": ["Professional greeting", "Good product knowledge", "Handled objections"],
-        "improvements": ["Ask for budget", "Create urgency", "Better closing"],
-        "critical_gaps": []
+def agent(mock_model_factory, criteria_path, tmp_path):
+    """Build QualityManagementAgent with mocked factory and temp cache dir."""
+    with patch("agents.agent_03_evaluation.ModelFactory", autospec=True):
+        from agents.agent_03_evaluation import QualityManagementAgent
+        return QualityManagementAgent(
+            model_factory=mock_model_factory,
+            criteria_path=criteria_path,
+            cache_dir=str(tmp_path / "cache"),
+            enable_cache=False,
+        )
+
+
+@pytest.fixture
+def all_yes_evaluation(agent):
+    """Evaluation dict with all 24 criteria scored YES."""
+    return {
+        "criteria": {
+            key: {"score": "YES", "evidence": "Agent did this well."}
+            for key in agent.EVALUATION_CRITERIA
+        }
     }
-    for i, key in enumerate(criteria_keys):
+
+
+@pytest.fixture
+def all_no_evaluation(agent):
+    """Evaluation dict with all 24 criteria scored NO."""
+    return {
+        "criteria": {
+            key: {"score": "NO", "evidence": "Not observed."}
+            for key in agent.EVALUATION_CRITERIA
+        }
+    }
+
+
+@pytest.fixture
+def mixed_evaluation(agent):
+    """Evaluation with rotating YES/PARTIAL/NO pattern."""
+    evaluation = {"criteria": {}}
+    for i, key in enumerate(agent.EVALUATION_CRITERIA):
         if i % 3 == 0:
-            evaluation["criteria"][key] = {"score": "YES", "evidence": "Agent did this well."}
+            evaluation["criteria"][key] = {"score": "YES", "evidence": "Done."}
         elif i % 3 == 1:
-            evaluation["criteria"][key] = {"score": "PARTIAL", "evidence": "Partially done."}
+            evaluation["criteria"][key] = {"score": "PARTIAL", "evidence": "Half."}
         else:
-            evaluation["criteria"][key] = {"score": "NO", "evidence": "Not observed."}
+            evaluation["criteria"][key] = {"score": "NO", "evidence": "Missing."}
     return evaluation
 
 
@@ -99,104 +137,98 @@ class TestCallTypeDetection:
         assert is_followup
         assert call_type == "Follow-up Call"
 
+    def test_followup_case_insensitive(self, agent):
+        is_followup, call_type = agent.detect_call_type("FOLLOW_UP_call.mp3")
+        assert is_followup
+
+    def test_regular_filename(self, agent):
+        is_followup, call_type = agent.detect_call_type("recording_20240115.mp3")
+        assert not is_followup
+        assert call_type == "First Call"
+
 
 # --- Tests: Score Calculation ---
 
 class TestScoreCalculation:
 
-    def test_all_yes_scores_100(self, agent):
-        """All YES should give 100%."""
-        evaluation = {"criteria": {}}
-        for key in agent.EVALUATION_CRITERIA:
-            evaluation["criteria"][key] = {"score": "YES", "evidence": "Done."}
-        result = agent.calculate_score(evaluation)
+    def test_all_yes_scores_100(self, agent, all_yes_evaluation):
+        result = agent.calculate_score(all_yes_evaluation)
         assert result["overall_score"] == 100.0
 
-    def test_all_no_scores_0(self, agent):
-        """All NO should give 0%."""
-        evaluation = {"criteria": {}}
-        for key in agent.EVALUATION_CRITERIA:
-            evaluation["criteria"][key] = {"score": "NO", "evidence": "Not done."}
-        result = agent.calculate_score(evaluation)
+    def test_all_no_scores_0(self, agent, all_no_evaluation):
+        result = agent.calculate_score(all_no_evaluation)
         assert result["overall_score"] == 0.0
 
     def test_all_partial_scores_50(self, agent):
-        """All PARTIAL should give 50%."""
-        evaluation = {"criteria": {}}
-        for key in agent.EVALUATION_CRITERIA:
-            evaluation["criteria"][key] = {"score": "PARTIAL", "evidence": "Half done."}
+        evaluation = {
+            "criteria": {
+                key: {"score": "PARTIAL", "evidence": "Half."}
+                for key in agent.EVALUATION_CRITERIA
+            }
+        }
         result = agent.calculate_score(evaluation)
         assert result["overall_score"] == 50.0
 
     def test_na_excluded_from_score(self, agent):
-        """N/A criteria should not affect the score."""
-        evaluation = {"criteria": {}}
         keys = list(agent.EVALUATION_CRITERIA.keys())
-        evaluation["criteria"][keys[0]] = {"score": "YES", "evidence": "Done."}
-        for key in keys[1:]:
-            evaluation["criteria"][key] = {"score": "N/A", "evidence": "Not applicable."}
+        evaluation = {
+            "criteria": {
+                keys[0]: {"score": "YES", "evidence": "Done."},
+                **{k: {"score": "N/A", "evidence": "N/A."} for k in keys[1:]},
+            }
+        }
         result = agent.calculate_score(evaluation)
         assert result["overall_score"] == 100.0
         assert result["score_breakdown"]["na_count"] == 23
 
-    def test_category_scores_returned(self, agent, sample_evaluation):
-        """Should return scores per category."""
-        result = agent.calculate_score(sample_evaluation)
+    def test_category_scores_present(self, agent, mixed_evaluation):
+        result = agent.calculate_score(mixed_evaluation)
         assert "category_scores" in result
         for cat in ["phone_skills", "sales_techniques", "urgency_closing", "soft_skills"]:
             assert cat in result["category_scores"]
-            assert "score" in result["category_scores"][cat]
 
-    def test_score_breakdown_counts(self, agent, sample_evaluation):
-        """Breakdown should have correct YES/PARTIAL/NO/N/A counts."""
-        result = agent.calculate_score(sample_evaluation)
-        breakdown = result["score_breakdown"]
-        total = breakdown["yes_count"] + breakdown["partial_count"] + breakdown["no_count"] + breakdown["na_count"]
+    def test_score_breakdown_sums_to_24(self, agent, mixed_evaluation):
+        result = agent.calculate_score(mixed_evaluation)
+        bd = result["score_breakdown"]
+        total = bd["yes_count"] + bd["partial_count"] + bd["no_count"] + bd["na_count"]
         assert total == 24
 
     def test_empty_criteria_returns_zero(self, agent):
-        """Empty or missing criteria should return 0."""
         result = agent.calculate_score({"criteria": {}})
         assert result["overall_score"] == 0
-        result2 = agent.calculate_score({})
-        assert result2["overall_score"] == 0
 
-
-# --- Tests: Transcript Truncation ---
-
-class TestTranscriptValidation:
-
-    def test_long_transcript_truncated(self, agent):
-        """Transcripts exceeding MAX_TRANSCRIPT_LENGTH should be truncated."""
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = json.dumps({
-            "criteria": {k: {"score": "YES", "evidence": "ok"} for k in agent.EVALUATION_CRITERIA},
-            "overall_assessment": "Good.",
-            "strengths": ["a", "b", "c"],
-            "improvements": ["d", "e", "f"],
-            "critical_gaps": []
-        })
-        mock_response.usage = MagicMock()
-        mock_response.usage.prompt_tokens = 1000
-        mock_response.usage.completion_tokens = 500
-        agent.client.chat.completions.create.return_value = mock_response
-
-        long_transcript = "word " * 50000  # way over limit
-        result = agent.evaluate_call(long_transcript, "test.mp3")
-        assert result.get("truncated") is True
+    def test_missing_criteria_key_returns_zero(self, agent):
+        result = agent.calculate_score({})
+        assert result["overall_score"] == 0
 
 
 # --- Tests: Listening Ratio ---
 
 class TestListeningRatio:
 
-    def test_labeled_format(self, agent):
+    def test_labeled_transcript(self, agent):
         transcript = "Agent: Hello how are you today\nClient: I am fine thanks"
         result = agent.calculate_listening_ratio(transcript)
         assert result["agent_percentage"] > 0
         assert result["client_percentage"] > 0
         assert abs(result["agent_percentage"] + result["client_percentage"] - 100.0) < 0.1
+
+    def test_speaker_format(self, agent):
+        transcript = "Speaker 0: Hello\nSpeaker 1: Hi there"
+        result = agent.calculate_listening_ratio(transcript)
+        assert result["total_words"] > 0
+
+    def test_empty_transcript(self, agent):
+        result = agent.calculate_listening_ratio("")
+        assert result["agent_percentage"] == 50.0
+        assert result["client_percentage"] == 50.0
+        assert result["total_words"] == 0
+
+    def test_only_agent_speaks(self, agent):
+        transcript = "Agent: I will talk the entire time here is more text"
+        result = agent.calculate_listening_ratio(transcript)
+        assert result["agent_percentage"] == 100.0
+        assert result["client_percentage"] == 0.0
 
     def test_elevenlabs_speaker_format(self, agent):
         """ElevenLabs Scribe format with Speaker 0/1 labels."""

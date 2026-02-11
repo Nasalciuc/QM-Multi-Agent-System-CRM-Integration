@@ -20,7 +20,7 @@ import logging
 import pandas as pd
 import httpx
 
-logger = logging.getLogger("qa_system")
+logger = logging.getLogger("qa_system.agents")
 
 
 class IntegrationAgent:
@@ -111,7 +111,11 @@ class IntegrationAgent:
         logger.info(f"CSV: {csv_summary_path}, {csv_details_path}")
 
         # JSON (reuse same timestamp)
-        json_path = self.export_json(evaluations, evaluations[0].get("model_used", "unknown") if evaluations else "unknown", timestamp=timestamp)
+        json_path = self.export_json(
+            evaluations,
+            evaluations[0].get("model_used", "unknown") if evaluations else "unknown",
+            timestamp=timestamp,
+        )
         files["json"] = json_path
 
         # Webhook (if configured)
@@ -129,7 +133,8 @@ class IntegrationAgent:
         print(f"\n  Exported: {excel_path}")
         return files
 
-    def export_json(self, evaluations: List[Dict], model_name: str, timestamp: Optional[str] = None) -> str:
+    def export_json(self, evaluations: List[Dict], model_name: str,
+                    timestamp: Optional[str] = None) -> str:
         """Export evaluations to JSON file. Returns filepath."""
         if timestamp is None:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
