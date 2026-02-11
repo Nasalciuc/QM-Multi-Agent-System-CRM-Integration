@@ -1,10 +1,27 @@
+# Virtual environments
 .venv/
+venv/
+env/
+
+# Git
 .git/
+.gitignore
+
+# Environment config
 .env
+.env.local
+
+# Python cache
 __pycache__/
 *.pyc
-data/
-tests/
-*.log
-.gitignore
+*.pyo
+
+# Documentation, tests, data
 README.md
+tests/
+data/
+*.log
+
+# IDE
+.vscode/
+.idea/
