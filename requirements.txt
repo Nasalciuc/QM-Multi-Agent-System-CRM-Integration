@@ -1,0 +1,5 @@
+ringcentral
+python-dotenv
+pyyaml
+httpx
+pydantic

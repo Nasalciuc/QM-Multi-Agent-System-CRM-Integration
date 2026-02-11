@@ -1,0 +1,33 @@
+# =============================================================================
+# Agent Configuration - All 4 agents in one file
+# =============================================================================
+
+ringcentral:
+  download_folder: "data/audio"
+  delay_seconds: 1.5           # Rate limit between API calls
+  days_back: 7                 # Default: process last 7 days
+  per_page: 100                # Results per API page (max 250)
+  call_type: "Voice"
+  with_recording: true
+
+elevenlabs:
+  model: "scribe_v1"
+  language_code: "eng"
+  diarization: true
+  tag_audio_events: true
+  cost_per_minute: 0.005       # $0.005/min
+  output_folder: "data/transcripts"
+
+openrouter:
+  primary_model: "anthropic/claude-sonnet-4-20250514"
+  fallback_model: "google/gemini-2.0-flash-001"
+  budget_model: "meta-llama/llama-3.1-70b-instruct"
+  temperature: 0.1             # Low for consistent scoring
+  max_tokens: 4096
+  timeout_seconds: 60
+
+integration:
+  webhook_url: ""              # Set via WEBHOOK_URL env var
+  retry_attempts: 3
+  evaluations_folder: "data/evaluations"
+  exports_folder: "data/exports"

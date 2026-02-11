@@ -1,0 +1,275 @@
+# =============================================================================
+# QA Evaluation Criteria - 24 Criteria in 4 Categories
+# =============================================================================
+# Used by Agent 3 (OpenRouter) to evaluate call transcripts.
+# Each criterion scored 1-5 with specific rubric per level.
+
+categories:
+
+  # ===========================================================================
+  # CATEGORY 1: PHONE SKILLS (6 criteria)
+  # ===========================================================================
+  phone_skills:
+    display_name: "Phone Skills"
+    criteria:
+
+      PS-01:
+        name: "Greeting & Introduction"
+        description: "Agent properly greets caller, states company name and own name"
+        scoring:
+          1: "No greeting or identification"
+          2: "Partial greeting, missing company or agent name"
+          3: "Standard greeting with company and name"
+          4: "Warm, professional greeting with all elements"
+          5: "Exceptional greeting, sets positive tone immediately"
+
+      PS-02:
+        name: "Hold Procedures"
+        description: "Agent follows proper hold procedures"
+        scoring:
+          1: "Places on hold without asking"
+          2: "Asks to hold but no explanation"
+          3: "Asks permission, gives brief reason"
+          4: "Asks permission, explains reason, gives time estimate"
+          5: "Perfect hold etiquette with follow-up thanks"
+
+      PS-03:
+        name: "Transfer Procedures"
+        description: "Agent follows proper transfer procedures"
+        scoring:
+          1: "Cold transfer without warning"
+          2: "Mentions transfer but no context"
+          3: "Explains transfer reason to caller"
+          4: "Warm transfer with context to both parties"
+          5: "Seamless transfer with full context and follow-up"
+
+      PS-04:
+        name: "Active Listening"
+        description: "Agent demonstrates active listening through verbal cues"
+        scoring:
+          1: "Interrupts frequently, ignores customer"
+          2: "Minimal acknowledgment"
+          3: "Acknowledges key points, some verbal cues"
+          4: "Consistently acknowledges, paraphrases, confirms understanding"
+          5: "Exceptional listening, anticipates needs"
+
+      PS-05:
+        name: "Clarity of Communication"
+        description: "Agent communicates clearly without jargon"
+        scoring:
+          1: "Unclear, heavy jargon, wrong pace"
+          2: "Somewhat clear, some jargon"
+          3: "Generally clear communication"
+          4: "Very clear, adjusts to customer level"
+          5: "Exceptionally clear, confirms understanding throughout"
+
+      PS-06:
+        name: "Call Closing"
+        description: "Agent properly closes call with summary and next steps"
+        scoring:
+          1: "Abrupt ending, no summary"
+          2: "Brief closing, no recap"
+          3: "Standard closing with basic summary"
+          4: "Thorough closing with recap and next steps"
+          5: "Exceptional closing with recap, next steps, and appreciation"
+
+  # ===========================================================================
+  # CATEGORY 2: SALES TECHNIQUES (6 criteria)
+  # ===========================================================================
+  sales_techniques:
+    display_name: "Sales Techniques"
+    criteria:
+
+      ST-01:
+        name: "Needs Analysis"
+        description: "Agent identifies customer needs through questioning"
+        scoring:
+          1: "No discovery questions asked"
+          2: "Basic questions, surface-level"
+          3: "Good questioning, identifies primary need"
+          4: "Thorough discovery, uncovers underlying needs"
+          5: "Expert discovery, identifies needs customer didn't know they had"
+
+      ST-02:
+        name: "Product Knowledge"
+        description: "Agent demonstrates thorough product/service knowledge"
+        scoring:
+          1: "Cannot answer basic product questions"
+          2: "Limited knowledge, requires frequent lookup"
+          3: "Adequate knowledge of main products"
+          4: "Strong knowledge across product line"
+          5: "Expert knowledge, provides insights beyond basics"
+
+      ST-03:
+        name: "Objection Handling"
+        description: "Agent effectively addresses customer objections"
+        scoring:
+          1: "Ignores or argues with objections"
+          2: "Acknowledges but cannot address"
+          3: "Addresses with standard responses"
+          4: "Skillfully reframes objections into opportunities"
+          5: "Masterfully turns skeptics into advocates"
+
+      ST-04:
+        name: "Value Proposition"
+        description: "Agent articulates value and benefits clearly"
+        scoring:
+          1: "No value proposition communicated"
+          2: "Lists features without connecting to benefits"
+          3: "Communicates basic benefits"
+          4: "Tailors value proposition to customer needs"
+          5: "Compelling, personalized value story"
+
+      ST-05:
+        name: "Cross-Selling / Up-Selling"
+        description: "Agent identifies relevant additional products"
+        scoring:
+          1: "No attempt at cross-selling"
+          2: "Generic, untargeted suggestion"
+          3: "Relevant suggestion but poor timing"
+          4: "Well-timed, relevant cross-sell"
+          5: "Natural, value-adding recommendation"
+
+      ST-06:
+        name: "Commitment / Gaining Agreement"
+        description: "Agent moves toward commitment effectively"
+        scoring:
+          1: "No attempt to gain commitment"
+          2: "Weak or premature close attempt"
+          3: "Standard closing attempt"
+          4: "Confident close with clear next steps"
+          5: "Natural progression, customer feels good about decision"
+
+  # ===========================================================================
+  # CATEGORY 3: URGENCY & CLOSING (6 criteria)
+  # ===========================================================================
+  urgency_closing:
+    display_name: "Urgency & Closing"
+    criteria:
+
+      UC-01:
+        name: "Scarcity / Limited Availability"
+        description: "Agent creates appropriate urgency through scarcity"
+        scoring:
+          1: "No urgency created"
+          2: "Weak or unconvincing urgency"
+          3: "Mentions limited availability"
+          4: "Creates genuine urgency with specific details"
+          5: "Masterful urgency, feels authentic not pushy"
+
+      UC-02:
+        name: "Decision Timeline"
+        description: "Agent establishes a decision timeline"
+        scoring:
+          1: "No timeline discussed"
+          2: "Vague timeline mention"
+          3: "Establishes basic timeline"
+          4: "Clear timeline with milestones"
+          5: "Strategic timeline that drives action"
+
+      UC-03:
+        name: "Cost of Delay"
+        description: "Agent helps customer understand implications of waiting"
+        scoring:
+          1: "No mention of delay consequences"
+          2: "Generic mention of potential loss"
+          3: "Explains basic cost of waiting"
+          4: "Quantifies cost of delay specifically"
+          5: "Compelling, personalized cost-of-delay analysis"
+
+      UC-04:
+        name: "Trial Close"
+        description: "Agent uses trial closes to gauge readiness"
+        scoring:
+          1: "No trial closes attempted"
+          2: "One weak trial close"
+          3: "Appropriate trial close at right time"
+          4: "Multiple strategic trial closes"
+          5: "Natural trial closes that advance conversation"
+
+      UC-05:
+        name: "Assumptive Close"
+        description: "Agent uses assumptive language to guide decision"
+        scoring:
+          1: "No assumptive language"
+          2: "Hesitant, permission-seeking language"
+          3: "Some confident, assumptive language"
+          4: "Consistent assumptive approach"
+          5: "Perfectly balanced confidence without pressure"
+
+      UC-06:
+        name: "Next Steps Clarity"
+        description: "Agent clearly defines what happens after the call"
+        scoring:
+          1: "No next steps discussed"
+          2: "Vague next steps"
+          3: "Basic next steps outlined"
+          4: "Detailed next steps with timeline"
+          5: "Complete action plan with accountability"
+
+  # ===========================================================================
+  # CATEGORY 4: SOFT SKILLS (6 criteria)
+  # ===========================================================================
+  soft_skills:
+    display_name: "Soft Skills"
+    criteria:
+
+      SS-01:
+        name: "Empathy"
+        description: "Agent demonstrates genuine empathy and understanding"
+        scoring:
+          1: "No empathy, robotic responses"
+          2: "Scripted empathy statements"
+          3: "Genuine acknowledgment of feelings"
+          4: "Strong empathy, validates emotions"
+          5: "Exceptional empathy, customer feels truly understood"
+
+      SS-02:
+        name: "Patience"
+        description: "Agent remains patient throughout interaction"
+        scoring:
+          1: "Rushes customer, shows frustration"
+          2: "Occasionally impatient"
+          3: "Generally patient"
+          4: "Consistently patient even with difficult topics"
+          5: "Extraordinarily patient, never rushes"
+
+      SS-03:
+        name: "Professionalism"
+        description: "Agent maintains professional demeanor"
+        scoring:
+          1: "Unprofessional language or behavior"
+          2: "Mostly professional with lapses"
+          3: "Consistently professional"
+          4: "Highly professional, represents company well"
+          5: "Exemplary professionalism, gold standard"
+
+      SS-04:
+        name: "Adaptability"
+        description: "Agent adapts communication style to customer"
+        scoring:
+          1: "One-size-fits-all approach"
+          2: "Limited adjustment"
+          3: "Some adaptation to customer style"
+          4: "Good adaptation, mirrors customer appropriately"
+          5: "Exceptional adaptability, perfect rapport"
+
+      SS-05:
+        name: "Confidence"
+        description: "Agent projects confidence without arrogance"
+        scoring:
+          1: "Uncertain, lacks confidence"
+          2: "Somewhat hesitant"
+          3: "Adequate confidence"
+          4: "Confident and reassuring"
+          5: "Inspires trust through natural authority"
+
+      SS-06:
+        name: "Rapport Building"
+        description: "Agent builds genuine rapport with customer"
+        scoring:
+          1: "No rapport, purely transactional"
+          2: "Minimal small talk"
+          3: "Some rapport building attempts"
+          4: "Good rapport, finds common ground"
+          5: "Exceptional connection, customer feels valued"
