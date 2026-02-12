@@ -16,12 +16,14 @@ build/
 .env.local
 
 # Data and logs
-data/
+data/audio/
+data/transcripts/
+data/evaluations/
+data/cache/
 *.log
 logs/
 
-# Cache
-data/cache/
+# Test cache
 .pytest_cache/
 
 # Documentation build

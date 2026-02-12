@@ -18,6 +18,18 @@ logger = logging.getLogger("qa_system.agents")
 CREDITS_PER_MINUTE = 280
 COST_PER_MINUTE = 0.005
 
+# Lazy import to avoid circular dependency
+_PIIRedactor = None
+
+
+def _get_redactor():
+    """Lazy-load PIIRedactor for transcript persistence redaction."""
+    global _PIIRedactor
+    if _PIIRedactor is None:
+        from src.processing.pii_redactor import PIIRedactor
+        _PIIRedactor = PIIRedactor
+    return _PIIRedactor()
+
 
 class ElevenLabsSTTAgent:
     """Agent: Speech-to-Text with ElevenLabs"""
@@ -54,14 +66,26 @@ class ElevenLabsSTTAgent:
         return result.text.strip()
 
     def _save_transcript(self, filename: str, transcript: str) -> Optional[Path]:
-        """Save transcript to disk as .txt file."""
+        """Save transcript to disk as .txt file.
+
+        HIGH-7: Redacts PII before persisting to prevent raw customer data
+        from being stored on disk.
+        """
         if not self.persist_transcripts:
             return None
         try:
+            # Redact PII before saving (HIGH-7)
+            redactor = _get_redactor()
+            redacted = redactor.redact(transcript)
+            safe_text = redacted["text"]
+
             stem = Path(filename).stem
             txt_path = self.transcripts_folder / f"{stem}.txt"
-            txt_path.write_text(transcript, encoding="utf-8")
-            logger.debug(f"Transcript saved: {txt_path}")
+            txt_path.write_text(safe_text, encoding="utf-8")
+            if redacted["total_redactions"] > 0:
+                logger.info(f"Transcript saved (PII redacted): {txt_path} | {redacted['pii_found']}")
+            else:
+                logger.debug(f"Transcript saved: {txt_path}")
             return txt_path
         except Exception as e:
             logger.warning(f"Failed to save transcript for {filename}: {e}")

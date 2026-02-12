@@ -59,6 +59,13 @@ class ModelFactory:
             "cost_warning_threshold_usd": 0.50,
         })
 
+    @property
+    def primary_pricing(self) -> dict:
+        """Pricing from the primary provider (input_per_1m, output_per_1m)."""
+        if self._primary:
+            return self._primary._pricing
+        return {"input_per_1m": 0.0, "output_per_1m": 0.0}
+
     def chat_with_fallback(
         self,
         system_prompt: str,

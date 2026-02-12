@@ -39,13 +39,15 @@ class OpenAIClient(BaseLLM):
         model: str,
         provider: str,
         pricing: Optional[Dict[str, float]] = None,
+        timeout: float = 120.0,
     ):
         self._base_url = base_url
         self._model = model
         self._provider = provider
         self._pricing = pricing or {"input_per_1m": 0.0, "output_per_1m": 0.0}
 
-        self._client = OpenAI(api_key=api_key, base_url=base_url)
+        # HIGH-6: Explicit timeout prevents indefinite hangs
+        self._client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
         logger.info(f"OpenAIClient initialized | provider={provider} model={model} base_url={base_url}")
 
     # ── BaseLLM interface ───────────────────────────────────────────

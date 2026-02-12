@@ -12,7 +12,7 @@ import os
 import sys
 from pathlib import Path
 
-from utils import setup_logging, load_config, load_env, validate_env
+from utils import setup_logging, load_config, load_env, validate_env, validate_models_config
 from agents.agent_01_audio import AudioFileFinder, RingCentralAgent
 from agents.agent_02_transcription import ElevenLabsSTTAgent
 from agents.agent_03_evaluation import QualityManagementAgent
@@ -37,6 +37,9 @@ def main():
     load_env()
     logger = setup_logging()
     config = load_config()
+
+    # HIGH-9: Validate models.yaml at startup for clear error messages
+    validate_models_config()
 
     # Validate required env vars upfront
     required = list(_BASE_ENV_KEYS)

@@ -80,7 +80,14 @@ class _SafeDict(dict):
 
     This prevents str.format_map() from crashing on literal braces
     in JSON examples within prompt templates.
+
+    MED-7: Logs a warning when a referenced variable is missing from the
+    provided context, which helps catch prompt template typos.
     """
 
     def __missing__(self, key: str) -> str:
+        import logging
+        logging.getLogger("qa_system.prompts").warning(
+            f"Template variable '{{{key}}}' not provided — left as placeholder"
+        )
         return "{" + key + "}"

@@ -25,6 +25,10 @@ def mock_model_factory():
     factory.primary.provider_name = "openrouter"
     factory.token_limits = {
         "max_input_tokens": 30000,
+        "max_output_tokens": 4096,
+        "cost_warning_threshold_usd": 0.50,
+    }
+    factory.primary_pricing = {
         "input_per_1m": 2.50,
         "output_per_1m": 10.00,
     }

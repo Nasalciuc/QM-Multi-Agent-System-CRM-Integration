@@ -10,6 +10,8 @@ and then calculate_score().
 
 import hashlib
 import json
+import os
+import tempfile
 import time
 import logging
 from pathlib import Path
@@ -21,6 +23,25 @@ from src.prompts.templates import PromptLoader
 from src.inference.response_parser import ResponseParser, ValidationError
 
 logger = logging.getLogger("qa_system.inference")
+
+
+def _json_serializer(obj):
+    """Explicit JSON serializer — replaces dangerous `default=str`.
+
+    CRIT-4: Only handles known types; raises TypeError for unexpected objects
+    instead of silently stringifying them (which can corrupt data).
+    """
+    if isinstance(obj, Path):
+        return str(obj)
+    try:
+        from datetime import datetime, date
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+    except ImportError:
+        pass
+    if isinstance(obj, set):
+        return sorted(obj)
+    raise TypeError(f"Non-serializable object: {type(obj).__name__}")
 
 
 class InferenceEngine:
@@ -49,6 +70,14 @@ class InferenceEngine:
         if self._enable_cache:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
 
+    # Whitelist of keys safe to persist in cache (CRIT-1: no raw_response, no secrets)
+    _CACHE_SAFE_KEYS = frozenset({
+        "criteria", "overall_assessment", "strengths", "improvements",
+        "critical_gaps", "call_type", "model_used", "provider_used",
+        "tokens_used", "cost_usd", "eval_time_seconds", "is_followup",
+        "truncated", "pii_redacted",
+    })
+
     def evaluate(
         self,
         transcript: str,
@@ -75,7 +104,10 @@ class InferenceEngine:
         first_key = list(criteria.keys())[0] if criteria else "criterion_1"
 
         # Check cache
-        cache_key = self._cache_key(transcript, call_type, criteria_count)
+        cache_key = self._cache_key(
+            transcript, call_type, criteria_count,
+            model=self._factory.primary.model_name,
+        )
         if self._enable_cache:
             cached = self._load_cache(cache_key)
             if cached:
@@ -176,9 +208,10 @@ class InferenceEngine:
         return "\n".join(lines)
 
     @staticmethod
-    def _cache_key(transcript: str, call_type: str, criteria_count: int) -> str:
-        """Generate cache key from transcript + evaluation parameters."""
-        content = f"{call_type}|{criteria_count}|{transcript}"
+    def _cache_key(transcript: str, call_type: str, criteria_count: int,
+                   model: str = "") -> str:
+        """Generate cache key from transcript + evaluation parameters + model."""
+        content = f"{model}|{call_type}|{criteria_count}|{transcript}"
         return hashlib.sha256(content.encode()).hexdigest()
 
     def _load_cache(self, key: str) -> Optional[Dict]:
@@ -195,12 +228,31 @@ class InferenceEngine:
         return None
 
     def _save_cache(self, key: str, data: Dict) -> None:
-        """Save evaluation result to cache."""
+        """Save evaluation result to cache using atomic write and sanitized data.
+
+        CRIT-1: Only whitelisted keys are persisted (no raw_response, no secrets).
+        CRIT-2: Writes to a temp file first, then renames (atomic on POSIX).
+        CRIT-4: Uses _json_serializer instead of default=str.
+        """
         if not self._cache_dir:
             return
         path = self._cache_dir / f"{key}.json"
+        safe_data = {k: v for k, v in data.items() if k in self._CACHE_SAFE_KEYS}
+        fd = None
+        tmp_path = None
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(self._cache_dir), suffix=".json.tmp"
+            )
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                fd = None  # os.fdopen takes ownership
+                json.dump(safe_data, f, indent=2, ensure_ascii=False,
+                          default=_json_serializer)
+            os.replace(tmp_path, str(path))  # atomic on all platforms
         except OSError as e:
             logger.warning(f"Failed to write cache: {e}")
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        finally:
+            if fd is not None:
+                os.close(fd)

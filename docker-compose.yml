@@ -11,6 +11,12 @@ services:
     volumes:
       - ./data:/app/data
     command: ["--folder", "data/audio"]
+    # MED-6: Docker health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import src; print('ok')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   qm-tests:
     build: .
@@ -19,3 +25,4 @@ services:
     volumes:
       - ./tests:/app/tests
       - ./config:/app/config
+      - ./src:/app/src

@@ -18,6 +18,10 @@ logger = logging.getLogger("qa_system.processing")
 
 TRUNCATION_MARKER = "\n\n[...transcript truncated due to length...]\n\n"
 
+# Default ratios for preserving call structure (greeting at start, closing at end)
+DEFAULT_KEEP_START_RATIO = 0.6
+DEFAULT_KEEP_END_RATIO = 0.4
+
 
 class TranscriptChunker:
     """Truncate or split long transcripts for LLM evaluation.
@@ -32,8 +36,8 @@ class TranscriptChunker:
     def __init__(
         self,
         max_tokens: int = 30000,
-        keep_start_ratio: float = 0.6,
-        keep_end_ratio: float = 0.4,
+        keep_start_ratio: float = DEFAULT_KEEP_START_RATIO,
+        keep_end_ratio: float = DEFAULT_KEEP_END_RATIO,
         token_counter: Optional[TokenCounter] = None,
     ):
         """

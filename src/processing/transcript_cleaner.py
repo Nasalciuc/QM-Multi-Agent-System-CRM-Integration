@@ -15,14 +15,25 @@ from typing import Optional
 logger = logging.getLogger("qa_system.processing")
 
 # Common STT filler words / artifacts to remove
+# MED-4: Filler words — only standalone interjections, not legitimate words.
+# "like," and "you know," require trailing comma to disambiguate from normal usage.
 FILLER_WORDS = {
     "um", "uh", "umm", "uhh", "hmm", "hmmm",
-    "er", "err", "ah", "ahh", "like,", "you know,",
+    "er", "err", "ah", "ahh",
 }
 
-# Regex for filler word removal (word boundaries)
+# Fillers that need trailing comma/pause to distinguish from real words
+_FILLER_WITH_COMMA = {"like,", "you know,"}
+
+# Regex for standalone fillers (safe — won't match real words)
 FILLER_PATTERN = re.compile(
-    r"\b(" + "|".join(re.escape(w.rstrip(",")) for w in FILLER_WORDS) + r")\b[,]?\s*",
+    r"\b(" + "|".join(re.escape(w) for w in FILLER_WORDS) + r")\b[,]?\s*",
+    re.IGNORECASE,
+)
+
+# Regex for comma-required fillers (only match "like," not "like")
+_FILLER_COMMA_PATTERN = re.compile(
+    r"\b(like|you know),\s*",
     re.IGNORECASE,
 )
 
@@ -129,8 +140,14 @@ class TranscriptCleaner:
 
     @staticmethod
     def _remove_fillers(text: str) -> str:
-        """Remove common filler words from transcript."""
-        return FILLER_PATTERN.sub("", text)
+        """Remove common filler words from transcript.
+
+        MED-4: Uses two patterns — standalone fillers (um, uh, etc.) and
+        comma-required fillers (like, you know) to avoid removing legitimate words.
+        """
+        text = FILLER_PATTERN.sub("", text)
+        text = _FILLER_COMMA_PATTERN.sub("", text)
+        return text
 
     @staticmethod
     def _clean_whitespace(text: str) -> str:

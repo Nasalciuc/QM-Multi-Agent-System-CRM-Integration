@@ -11,7 +11,7 @@ Exports:
 
 from pathlib import Path
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, date
 import json
 import os
 import time
@@ -21,6 +21,20 @@ import pandas as pd
 import httpx
 
 logger = logging.getLogger("qa_system.agents")
+
+
+def _json_serializer(obj):
+    """Explicit JSON serializer — replaces dangerous `default=str`.
+
+    CRIT-4: Only handles known types; raises TypeError for unexpected objects.
+    """
+    if isinstance(obj, Path):
+        return str(obj)
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, set):
+        return sorted(obj)
+    raise TypeError(f"Non-serializable object: {type(obj).__name__}")
 
 
 class IntegrationAgent:
@@ -98,6 +112,17 @@ class IntegrationAgent:
         with pd.ExcelWriter(excel_path, engine='openpyxl') as w:
             df_summary.to_excel(w, sheet_name='Summary', index=False)
             df_detail.to_excel(w, sheet_name='Details', index=False)
+            # MED-5: Auto-fit column widths for readability
+            for sheet_name in ['Summary', 'Details']:
+                ws = w.sheets[sheet_name]
+                for col in ws.iter_cols(min_row=1, max_row=1):
+                    for cell in col:
+                        col_letter = cell.column_letter
+                        max_width = max(
+                            len(str(cell.value or "")),
+                            max((len(str(c.value or "")) for c in ws[col_letter]), default=0),
+                        )
+                        ws.column_dimensions[col_letter].width = min(max_width + 2, 60)
         files["excel"] = excel_path
         logger.info(f"Excel: {excel_path}")
 
@@ -122,12 +147,14 @@ class IntegrationAgent:
         if self.webhook_url:
             total_cost = sum(e.get("cost_usd", 0) for e in evaluations)
             avg_score = sum(e.get("overall_score", 0) for e in evaluations) / len(evaluations) if evaluations else 0
+            # HIGH-5: Only send filenames, not full filesystem paths
+            safe_files = {k: os.path.basename(str(v)) for k, v in files.items()}
             self.send_webhook({
                 "event": "qa_evaluation_complete",
                 "calls_processed": len(evaluations),
                 "average_score": round(avg_score, 1),
                 "total_cost_usd": round(total_cost, 4),
-                "files": files
+                "files": safe_files
             })
 
         print(f"\n  Exported: {excel_path}")
@@ -153,19 +180,23 @@ class IntegrationAgent:
         }
 
         with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(output, f, indent=2, ensure_ascii=False, default=str)
+            json.dump(output, f, indent=2, ensure_ascii=False, default=_json_serializer)
 
         logger.info(f"JSON: {json_path}")
         return json_path
 
     def send_webhook(self, payload: dict) -> bool:
-        """POST payload to webhook URL with retry. Returns True on success."""
+        """POST payload to webhook URL with retry. Returns True on success.
+
+        HIGH-10: Uses shorter timeouts and caps retry delay to minimize blocking.
+        """
         if not self.webhook_url:
             return False
 
-        for attempt in range(3):
+        max_attempts = 3
+        for attempt in range(max_attempts):
             try:
-                with httpx.Client(timeout=10) as client:
+                with httpx.Client(timeout=5) as client:
                     response = client.post(self.webhook_url, json=payload)
                     if 200 <= response.status_code < 300:
                         logger.info(f"Webhook sent: {response.status_code}")
@@ -174,7 +205,8 @@ class IntegrationAgent:
             except Exception as e:
                 logger.warning(f"Webhook attempt {attempt+1} failed: {e}")
 
-            time.sleep(2 ** attempt)  # 1s, 2s, 4s exponential backoff
+            if attempt < max_attempts - 1:
+                time.sleep(min(2 ** attempt, 4))  # cap at 4s
 
         logger.error("Webhook failed after 3 attempts")
         return False
