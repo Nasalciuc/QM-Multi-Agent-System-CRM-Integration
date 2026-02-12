@@ -26,7 +26,7 @@ def _get_redactor():
     """Lazy-load PIIRedactor for transcript persistence redaction."""
     global _PIIRedactor
     if _PIIRedactor is None:
-        from src.processing.pii_redactor import PIIRedactor
+        from processing.pii_redactor import PIIRedactor
         _PIIRedactor = PIIRedactor
     return _PIIRedactor()
 

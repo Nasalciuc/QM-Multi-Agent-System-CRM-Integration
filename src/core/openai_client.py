@@ -13,7 +13,7 @@ from typing import Dict, Optional
 
 from openai import OpenAI
 
-from src.core.base_llm import BaseLLM, LLMResponse
+from core.base_llm import BaseLLM, LLMResponse
 
 logger = logging.getLogger("qa_system.core")
 

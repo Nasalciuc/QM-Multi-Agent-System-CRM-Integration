@@ -15,8 +15,8 @@ from typing import List, Optional
 import yaml
 from pathlib import Path
 
-from src.core.base_llm import BaseLLM, LLMResponse
-from src.core.openai_client import OpenAIClient
+from core.base_llm import BaseLLM, LLMResponse
+from core.openai_client import OpenAIClient
 
 logger = logging.getLogger("qa_system.core")
 

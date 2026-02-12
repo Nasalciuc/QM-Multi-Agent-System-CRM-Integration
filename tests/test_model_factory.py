@@ -10,8 +10,6 @@ import yaml
 import pytest
 from unittest.mock import MagicMock, patch
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
 from core.model_factory import ModelFactory
 from core.base_llm import LLMResponse
 

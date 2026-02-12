@@ -12,7 +12,7 @@ Start with truncation; chunk-and-merge scoring is a future option.
 import logging
 from typing import Optional
 
-from src.processing.token_counter import TokenCounter
+from processing.token_counter import TokenCounter
 
 logger = logging.getLogger("qa_system.processing")
 

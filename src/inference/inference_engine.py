@@ -17,10 +17,10 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional, Set
 
-from src.core.model_factory import ModelFactory
-from src.core.base_llm import LLMResponse
-from src.prompts.templates import PromptLoader
-from src.inference.response_parser import ResponseParser, ValidationError
+from core.model_factory import ModelFactory
+from core.base_llm import LLMResponse
+from prompts.templates import PromptLoader
+from inference.response_parser import ResponseParser, ValidationError
 
 logger = logging.getLogger("qa_system.inference")
 

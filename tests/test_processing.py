@@ -10,8 +10,6 @@ import os
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
 from processing.transcript_cleaner import TranscriptCleaner
 from processing.token_counter import TokenCounter
 from processing.chunker import TranscriptChunker

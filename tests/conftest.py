@@ -17,9 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Ensure src/ is on the import path
 PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 
 # ── Path fixtures ───────────────────────────────────────────────────

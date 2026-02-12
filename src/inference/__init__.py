@@ -6,7 +6,7 @@ Orchestrates the LLM evaluation cycle:
   - InferenceEngine: build prompts → call LLM → parse → retry
 """
 
-from src.inference.response_parser import ResponseParser, ValidationError
-from src.inference.inference_engine import InferenceEngine
+from inference.response_parser import ResponseParser, ValidationError
+from inference.inference_engine import InferenceEngine
 
 __all__ = ["ResponseParser", "ValidationError", "InferenceEngine"]
