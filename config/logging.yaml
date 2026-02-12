@@ -1,8 +1,12 @@
 # =============================================================================
 # Logging Configuration — loaded via logging.config.dictConfig()
 # =============================================================================
-# Two handlers: console (always) + file (rotated daily)
+# Three formatters: console (human), file (text), json (structured)
+# Three handlers: console (always) + file (rotated daily) + json_file (structured)
 # Per-module log levels for fine-grained control
+#
+# To use JSON logging in production, set QA_LOG_FORMAT=json env var
+# and update root/logger handlers to include json_file
 
 version: 1
 disable_existing_loggers: false
@@ -14,6 +18,8 @@ formatters:
   file:
     format: "%(asctime)s [%(levelname)s] %(name)s [%(filename)s:%(lineno)d] %(message)s"
     datefmt: "%Y-%m-%d %H:%M:%S"
+  json:
+    class: utils.JsonLogFormatter
 
 handlers:
   console:
@@ -23,12 +29,23 @@ handlers:
     stream: ext://sys.stdout
 
   file:
-    class: logging.handlers.RotatingFileHandler
+    class: logging.handlers.TimedRotatingFileHandler
     level: DEBUG
     formatter: file
     filename: data/qa_system.log
-    maxBytes: 10485760          # 10 MB
-    backupCount: 5
+    when: midnight
+    interval: 1
+    backupCount: 14
+    encoding: utf-8
+
+  json_file:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: DEBUG
+    formatter: json
+    filename: data/qa_system.json.log
+    when: midnight
+    interval: 1
+    backupCount: 14
     encoding: utf-8
 
 root:

@@ -7,15 +7,46 @@ Shared helpers used across agents:
   - load_env: Load .env file
   - validate_env: Check required environment variables
   - load_criteria: Load QA criteria from YAML
+  - JsonLogFormatter: JSON structured logging formatter
 """
 
+import datetime
+import json
 import logging
 import logging.config
 import os
+import traceback
 import yaml
 from pathlib import Path
 from typing import List
 from dotenv import load_dotenv
+
+
+class JsonLogFormatter(logging.Formatter):
+    """JSON structured log formatter for production use.
+
+    Outputs one JSON object per line with standard fields:
+      timestamp, level, logger, message, filename, lineno
+
+    Referenced by config/logging.yaml as ``utils.JsonLogFormatter``.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        log_entry = {
+            "timestamp": datetime.datetime.fromtimestamp(
+                record.created, tz=datetime.timezone.utc
+            ).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "filename": record.filename,
+            "lineno": record.lineno,
+        }
+        if record.exc_info and record.exc_info[0] is not None:
+            log_entry["exception"] = traceback.format_exception(*record.exc_info)
+        if hasattr(record, "extra_data"):
+            log_entry["extra"] = record.extra_data
+        return json.dumps(log_entry, default=str)
 
 
 def setup_logging(config_path: str = "config/logging.yaml", default_level: str = "INFO") -> logging.Logger:

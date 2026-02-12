@@ -57,7 +57,8 @@ class Pipeline:
 
     def __init__(self, agent_01, agent_02, agent_03, agent_04,
                  max_consecutive_failures: int = 3,
-                 delay_between_evaluations: float = 1.0):
+                 delay_between_evaluations: float = 1.0,
+                 cost_warning_threshold_usd: float = 0.50):
         """Store all 4 agents and initialize tracking.
 
         Args:
@@ -67,6 +68,7 @@ class Pipeline:
             agent_04: IntegrationAgent
             max_consecutive_failures: Circuit breaker threshold.
             delay_between_evaluations: Seconds to wait between LLM calls (HIGH-2).
+            cost_warning_threshold_usd: Warn/stop if cumulative batch cost exceeds this.
         """
         self.audio_agent = agent_01
         self.stt_agent = agent_02
@@ -75,7 +77,9 @@ class Pipeline:
         self.total_cost = 0.0
         self.max_consecutive_failures = max_consecutive_failures
         self.delay_between_evaluations = delay_between_evaluations
+        self.cost_warning_threshold_usd = cost_warning_threshold_usd
         self._providers_used: set = set()  # HIGH-12: track which providers were used
+        self._cost_warning_issued = False
 
     def run(self, date_from: str, date_to: Optional[str] = None) -> List[Dict]:
         """Full pipeline: RingCentral -> ElevenLabs -> QA -> Export"""
@@ -187,6 +191,18 @@ class Pipeline:
 
             cost = evaluation.get("cost_usd", 0)
             self.total_cost += cost
+
+            # Cost budget guard: warn when cumulative cost exceeds threshold
+            if (self.cost_warning_threshold_usd > 0
+                    and self.total_cost >= self.cost_warning_threshold_usd
+                    and not self._cost_warning_issued):
+                self._cost_warning_issued = True
+                logger.warning(
+                    f"Cost budget warning: cumulative LLM cost ${self.total_cost:.4f} "
+                    f"exceeds threshold ${self.cost_warning_threshold_usd:.2f}"
+                )
+                print(f"\n  WARNING: Cumulative cost ${self.total_cost:.4f} "
+                      f"exceeds threshold ${self.cost_warning_threshold_usd:.2f}")
 
             # HIGH-12: Track which providers were used
             provider = evaluation.get("provider_used", evaluation.get("model_used", "unknown"))

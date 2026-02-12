@@ -151,6 +151,18 @@ class TestCacheKey:
         key2 = InferenceEngine._cache_key("same", "same", 10, model="same")
         assert key1 == key2
 
+    def test_cache_key_includes_criteria_hash(self):
+        """Cache invalidates when criteria content changes."""
+        key1 = InferenceEngine._cache_key("t", "First Call", 2, model="m", criteria_hash="abc123")
+        key2 = InferenceEngine._cache_key("t", "First Call", 2, model="m", criteria_hash="def456")
+        assert key1 != key2
+
+    def test_cache_key_includes_prompt_hash(self):
+        """Cache invalidates when prompt template changes."""
+        key1 = InferenceEngine._cache_key("t", "First Call", 2, model="m", prompt_hash="v1")
+        key2 = InferenceEngine._cache_key("t", "First Call", 2, model="m", prompt_hash="v2")
+        assert key1 != key2
+
 
 # --- Tests: JSON Serializer (CRIT-4) ---
 

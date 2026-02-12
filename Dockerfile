@@ -1,6 +1,8 @@
 # === QM Multi Agent System ===
-# Python 3.11 | FFmpeg for pydub audio processing
+# Multi-stage build: test → production
+# Production image runs as non-root user with minimal attack surface
 
+# ── Stage 1: Base with dependencies ─────────────────────────────────
 FROM python:3.11-slim AS base
 
 # Install ffmpeg (required by pydub for audio duration detection)
@@ -11,24 +13,51 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# Install dependencies first (layer caching)
+# Install production dependencies first (layer caching)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code, config and tests
+# ── Stage 2: Test runner (includes dev deps + tests) ────────────────
+FROM base AS test
+
+COPY requirements-dev.txt .
+RUN pip install --no-cache-dir -r requirements-dev.txt
+
 COPY src/ src/
 COPY config/ config/
 COPY tests/ tests/
+COPY pyproject.toml .
 
-# Create data directories
-RUN mkdir -p data/audio data/transcripts data/evaluations data/cache
+ENV PYTHONPATH=/app/src
+ENV PYTHONUNBUFFERED=1
+
+ENTRYPOINT ["python", "-m", "pytest"]
+CMD ["tests/", "-v", "--tb=short"]
+
+# ── Stage 3: Production (no tests, no dev deps, non-root) ──────────
+FROM base AS production
+
+# Create non-root user
+RUN useradd -m -s /bin/bash appuser
+
+# Copy only production code
+COPY src/ src/
+COPY config/ config/
+
+# Create data directories owned by appuser
+RUN mkdir -p data/audio data/transcripts data/evaluations data/cache && \
+    chown -R appuser:appuser data/
 
 # Set Python path so src/ imports work
 ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
 
+# Run as non-root
+USER appuser
+
 ENTRYPOINT ["python", "src/main.py"]
 # Usage:
+#   docker build --target production -t qm-system .
+#   docker build --target test -t qm-tests .
 #   docker run --env-file .env qm-system --folder data/audio
-#   docker run --env-file .env qm-system --date-from 2025-02-01 --date-to 2025-02-11
 #   docker run --env-file .env -v ./data:/app/data qm-system --folder data/audio

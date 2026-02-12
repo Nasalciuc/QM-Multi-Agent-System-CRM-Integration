@@ -103,17 +103,6 @@ class InferenceEngine:
         criteria_text = self._build_criteria_text(criteria)
         first_key = list(criteria.keys())[0] if criteria else "criterion_1"
 
-        # Check cache
-        cache_key = self._cache_key(
-            transcript, call_type, criteria_count,
-            model=self._factory.primary.model_name,
-        )
-        if self._enable_cache:
-            cached = self._load_cache(cache_key)
-            if cached:
-                logger.info(f"Cache hit for {call_type} evaluation (key={cache_key[:12]})")
-                return cached
-
         # Build prompts
         system_prompt = self._prompts.render(
             "qa_system",
@@ -128,6 +117,25 @@ class InferenceEngine:
             criteria_text=criteria_text,
             first_criterion_key=first_key,
         )
+
+        # Check cache — include criteria content and prompt hashes for invalidation
+        criteria_content = json.dumps(criteria, sort_keys=True, default=str)
+        criteria_hash = hashlib.sha256(criteria_content.encode()).hexdigest()[:16]
+        prompt_hash = hashlib.sha256(
+            (system_prompt + user_prompt).encode()
+        ).hexdigest()[:16]
+
+        cache_key = self._cache_key(
+            transcript, call_type, criteria_count,
+            model=self._factory.primary.model_name,
+            criteria_hash=criteria_hash,
+            prompt_hash=prompt_hash,
+        )
+        if self._enable_cache:
+            cached = self._load_cache(cache_key)
+            if cached:
+                logger.info(f"Cache hit for {call_type} evaluation (key={cache_key[:12]})")
+                return cached
 
         # Retry loop
         parser = ResponseParser(expected_keys=expected_keys)
@@ -209,9 +217,14 @@ class InferenceEngine:
 
     @staticmethod
     def _cache_key(transcript: str, call_type: str, criteria_count: int,
-                   model: str = "") -> str:
-        """Generate cache key from transcript + evaluation parameters + model."""
-        content = f"{model}|{call_type}|{criteria_count}|{transcript}"
+                   model: str = "", criteria_hash: str = "",
+                   prompt_hash: str = "") -> str:
+        """Generate cache key from transcript + evaluation parameters + model + criteria content.
+
+        Includes criteria content hash and prompt hash to invalidate cache
+        when criteria definitions or prompts change (not just count).
+        """
+        content = f"{model}|{call_type}|{criteria_count}|{criteria_hash}|{prompt_hash}|{transcript}"
         return hashlib.sha256(content.encode()).hexdigest()
 
     def _load_cache(self, key: str) -> Optional[Dict]:
