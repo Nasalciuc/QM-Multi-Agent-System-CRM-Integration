@@ -35,6 +35,9 @@ echo "Activating virtual environment..."
 # shellcheck disable=SC1091
 source .venv/bin/activate
 
+# DESIGN-7: Set PYTHONPATH so bare imports (e.g. from agents.xxx) work
+export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$(pwd)/src"
+
 # Install dependencies
 echo "Installing dependencies..."
 pip install --upgrade pip

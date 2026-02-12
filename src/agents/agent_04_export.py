@@ -27,6 +27,7 @@ def _json_serializer(obj):
     """Explicit JSON serializer — replaces dangerous `default=str`.
 
     CRIT-4: Only handles known types; raises TypeError for unexpected objects.
+    MED-21: Also handles numpy scalars, Decimal, and bytes.
     """
     if isinstance(obj, Path):
         return str(obj)
@@ -34,6 +35,27 @@ def _json_serializer(obj):
         return obj.isoformat()
     if isinstance(obj, set):
         return sorted(obj)
+    # MED-21: numpy scalar → Python native
+    try:
+        import numpy as np
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+    except ImportError:
+        pass
+    # MED-21: Decimal → float
+    try:
+        from decimal import Decimal
+        if isinstance(obj, Decimal):
+            return float(obj)
+    except ImportError:
+        pass
+    # MED-21: bytes → utf-8 string
+    if isinstance(obj, bytes):
+        return obj.decode("utf-8", errors="replace")
     raise TypeError(f"Non-serializable object: {type(obj).__name__}")
 
 
@@ -150,6 +172,8 @@ class IntegrationAgent:
 
         # Webhook (if configured)
         if self.webhook_url:
+            # MED-17: Log webhook dispatch (without exposing URL or payload data)
+            logger.info("Sending webhook to configured URL (contains score/cost data)")
             total_cost = sum(e.get("cost_usd", 0) for e in evaluations)
             avg_score = sum(e.get("overall_score", 0) for e in evaluations) / len(evaluations) if evaluations else 0
             # HIGH-5: Only send filenames, not full filesystem paths

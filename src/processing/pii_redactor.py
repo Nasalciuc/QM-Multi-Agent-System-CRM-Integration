@@ -31,17 +31,17 @@ logger = logging.getLogger("qa_system.processing")
 
 # ── Regex patterns ──────────────────────────────────────────────────
 
-# Phone: (123) 456-7890, 123-456-7890, +1-123-456-7890, 1234567890
-# CRIT-5: Also matches unseparated 10-digit numbers (e.g., 5551234567)
+# Phone: (123) 456-7890, 123-456-7890, +1-123-456-7890
 _PHONE_PATTERN = re.compile(
     r"(?<!\d)"
     r"(?:\+?1[-.\ s]?)?"
-    r"(?:"
-    r"\(?\d{3}\)?[-.\ s]\d{3}[-.\ s]?\d{4}"  # with separator after area code
-    r"|"
-    r"\d{10}"                                    # unseparated 10-digit
-    r")"
+    r"\(?\d{3}\)?[-.\ s]\d{3}[-.\ s]?\d{4}"
     r"(?!\d)"
+)
+
+# CRIT-5: Unseparated 10-digit phone numbers (e.g., 5551234567)
+_PHONE_NOSEP_PATTERN = re.compile(
+    r"(?<!\d)\d{10}(?!\d)"
 )
 
 # Email: user@domain.tld
@@ -148,6 +148,9 @@ class PIIRedactor:
         if self.redact_phones:
             text, n = _PHONE_PATTERN.subn(_REPLACEMENTS["phone"], text)
             counts["phone"] = n
+            # CRIT-5: Also catch unseparated 10-digit numbers
+            text, n2 = _PHONE_NOSEP_PATTERN.subn(_REPLACEMENTS["phone"], text)
+            counts["phone"] += n2
 
         # CRIT-3: Spelled-out PII (common in call center recordings)
         if self.redact_spelled_pii:

@@ -60,6 +60,10 @@ class PromptLoader:
         Uses str.format_map() with a SafeDict so missing keys
         are left as-is (e.g. literal JSON braces aren't broken).
 
+        DESIGN-22: Escapes curly braces in the 'transcript' variable
+        to prevent format_map() from interpreting transcript content
+        (e.g. JSON samples in call recordings) as format placeholders.
+
         Args:
             template_name: Template name (without .txt extension).
             **variables: Key-value pairs to substitute.
@@ -68,6 +72,11 @@ class PromptLoader:
             Rendered prompt string.
         """
         template = self.load(template_name)
+        # DESIGN-22: Escape braces in transcript before substitution
+        if "transcript" in variables and isinstance(variables["transcript"], str):
+            variables["transcript"] = (
+                variables["transcript"].replace("{", "{{").replace("}", "}}")
+            )
         return template.format_map(_SafeDict(variables))
 
     def clear_cache(self) -> None:

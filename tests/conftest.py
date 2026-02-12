@@ -79,10 +79,23 @@ def _make_completion_response(text: str, input_tokens: int = 5000, output_tokens
 
 @pytest.fixture
 def mock_elevenlabs_client():
-    """Mock ElevenLabs client."""
+    """Mock ElevenLabs client with Scribe v2 word-level diarization."""
     client = MagicMock()
     result = MagicMock()
-    result.text = "Speaker 0: Hello, how can I help?\nSpeaker 1: I need assistance."
+    result.text = "Hello, how can I help? I need assistance."
+    result.language_code = "en"
+    # Scribe v2 word-level diarization format
+    w0 = lambda t, s="speaker_0", tp="word": MagicMock(text=t, speaker_id=s, type=tp)
+    w1 = lambda t, s="speaker_1", tp="word": MagicMock(text=t, speaker_id=s, type=tp)
+    sp0 = lambda: MagicMock(text=" ", speaker_id="speaker_0", type="spacing")
+    sp1 = lambda: MagicMock(text=" ", speaker_id="speaker_1", type="spacing")
+    result.words = [
+        w0("Hello"), w0(",", tp="punctuation"), sp0(),
+        w0("how"), sp0(), w0("can"), sp0(), w0("I"), sp0(), w0("help"),
+        w0("?", tp="punctuation"),
+        w1("I"), sp1(), w1("need"), sp1(), w1("assistance"),
+        w1(".", tp="punctuation"),
+    ]
     client.speech_to_text.convert.return_value = result
     return client
 

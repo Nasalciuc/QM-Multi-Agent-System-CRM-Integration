@@ -1,7 +1,8 @@
 """
-Tests for Agent 2: ElevenLabs Transcription
+Tests for Agent 2: ElevenLabs Transcription (Scribe v2)
 
 Tests ElevenLabsSTTAgent with mocked ElevenLabs client.
+Covers diarization, timeout, retry, batch processing.
 """
 import sys
 import os
@@ -10,18 +11,56 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agents.agent_02_transcription import ElevenLabsSTTAgent
+from agents.agent_02_transcription import ElevenLabsSTTAgent, _speaker_label
+
+
+# --- Helpers ---
+
+def _make_word(text, speaker_id=None, wtype="word"):
+    """Build a Scribe v2 word object (mock)."""
+    w = MagicMock()
+    w.text = text
+    w.speaker_id = speaker_id
+    w.type = wtype
+    return w
+
+
+def _make_scribe_v2_result(words=None, text=None, language_code="en"):
+    """Build a mock Scribe v2 API result."""
+    result = MagicMock()
+    if words is None:
+        words = [
+            _make_word("Hello", "speaker_0"),
+            _make_word(",", "speaker_0", "punctuation"),
+            _make_word(" ", "speaker_0", "spacing"),
+            _make_word("how", "speaker_0"),
+            _make_word(" ", "speaker_0", "spacing"),
+            _make_word("can", "speaker_0"),
+            _make_word(" ", "speaker_0", "spacing"),
+            _make_word("I", "speaker_0"),
+            _make_word(" ", "speaker_0", "spacing"),
+            _make_word("help", "speaker_0"),
+            _make_word("?", "speaker_0", "punctuation"),
+            _make_word("I", "speaker_1"),
+            _make_word(" ", "speaker_1", "spacing"),
+            _make_word("need", "speaker_1"),
+            _make_word(" ", "speaker_1", "spacing"),
+            _make_word("help", "speaker_1"),
+            _make_word(".", "speaker_1", "punctuation"),
+        ]
+    result.words = words
+    result.text = text or "Hello, how can I help? I need help."
+    result.language_code = language_code
+    return result
 
 
 # --- Fixtures ---
 
 @pytest.fixture
 def mock_client():
-    """Mock ElevenLabs client."""
+    """Mock ElevenLabs client with Scribe v2 response."""
     client = MagicMock()
-    result = MagicMock()
-    result.text = "  Speaker 0: Hello, how can I help you today?\nSpeaker 1: I need help with my account.  "
-    client.speech_to_text.convert.return_value = result
+    client.speech_to_text.convert.return_value = _make_scribe_v2_result()
     return client
 
 
@@ -31,6 +70,8 @@ def agent(mock_client, tmp_path):
         client=mock_client,
         persist_transcripts=True,
         transcripts_folder=str(tmp_path / "transcripts"),
+        model_id="scribe_v2",
+        diarize=True,
     )
 
 
@@ -51,18 +92,74 @@ def fake_audio(tmp_path):
 
 class TestTranscribe:
 
-    def test_transcribe_returns_text(self, agent, fake_audio):
-        """transcribe() should return stripped text."""
+    def test_transcribe_returns_dict(self, agent, fake_audio):
+        """transcribe() should return a dict with text, raw_text, speakers_detected."""
         result = agent.transcribe(fake_audio)
-        assert "Speaker 0:" in result
-        assert not result.startswith(" ")  # should be stripped
+        assert isinstance(result, dict)
+        assert "text" in result
+        assert "raw_text" in result
+        assert "speakers_detected" in result
+        assert "diarized" in result
 
-    def test_transcribe_calls_api(self, agent, fake_audio, mock_client):
-        """Should call speech_to_text.convert with correct model."""
+    def test_transcribe_calls_api_with_scribe_v2(self, agent, fake_audio, mock_client):
+        """Should call speech_to_text.convert with model_id=scribe_v2."""
         agent.transcribe(fake_audio)
         mock_client.speech_to_text.convert.assert_called_once()
-        call_kwargs = mock_client.speech_to_text.convert.call_args
-        assert call_kwargs[1]["model_id"] == "scribe_v1"
+        call_kwargs = mock_client.speech_to_text.convert.call_args[1]
+        assert call_kwargs["model_id"] == "scribe_v2"
+
+    def test_transcribe_detects_speakers(self, agent, fake_audio):
+        """Diarization should detect 2 speakers."""
+        result = agent.transcribe(fake_audio)
+        assert result["speakers_detected"] == 2
+        assert result["diarized"] is True
+
+    def test_transcribe_diarized_text_has_labels(self, agent, fake_audio):
+        """Diarized text should contain Speaker 0: / Speaker 1: labels."""
+        result = agent.transcribe(fake_audio)
+        assert "Speaker 0:" in result["text"]
+        assert "Speaker 1:" in result["text"]
+
+
+# --- Tests: Diarization ---
+
+class TestDiarization:
+
+    def test_build_diarized_transcript_basic(self):
+        """_build_diarized_transcript should group words by speaker."""
+        words = [
+            {"text": "Hi", "speaker_id": "speaker_0", "type": "word"},
+            {"text": " ", "speaker_id": "speaker_0", "type": "spacing"},
+            {"text": "there", "speaker_id": "speaker_0", "type": "word"},
+            {"text": "Hello", "speaker_id": "speaker_1", "type": "word"},
+        ]
+        text, speakers = ElevenLabsSTTAgent._build_diarized_transcript(words)
+        assert "Speaker 0:" in text
+        assert "Speaker 1:" in text
+        assert len(speakers) == 2
+
+    def test_build_diarized_transcript_empty(self):
+        """Empty words list should return empty string."""
+        text, speakers = ElevenLabsSTTAgent._build_diarized_transcript([])
+        assert text == ""
+        assert len(speakers) == 0
+
+    def test_speaker_label_mapping(self):
+        """_speaker_label should map speaker_0 → 'Speaker 0'."""
+        assert _speaker_label("speaker_0") == "Speaker 0"
+        assert _speaker_label("speaker_1") == "Speaker 1"
+        assert _speaker_label(None) == "Speaker"
+
+    def test_diarize_disabled(self, mock_client, tmp_path, fake_audio):
+        """When diarize=False, should return raw text without speaker labels."""
+        agent = ElevenLabsSTTAgent(
+            client=mock_client,
+            persist_transcripts=False,
+            diarize=False,
+        )
+        result = agent.transcribe(fake_audio)
+        assert result["diarized"] is False
+        assert result["speakers_detected"] == 0
 
 
 # --- Tests: Transcript Persistence ---
@@ -92,11 +189,9 @@ class TestPersistence:
         path = agent._save_transcript("call_pii.mp3", transcript_with_pii)
         assert path is not None
         saved_text = path.read_text(encoding="utf-8")
-        # Raw PII must NOT appear in saved file
         assert "555-123-4567" not in saved_text
         assert "john@example.com" not in saved_text
         assert "123-45-6789" not in saved_text
-        # Redaction tokens must be present instead
         assert "[PHONE]" in saved_text
         assert "[EMAIL]" in saved_text
         assert "[SSN]" in saved_text
@@ -124,10 +219,14 @@ class TestBatchTranscription:
         assert results["call1.mp3"]["status"] == "Success"
         assert "transcript" in results["call1.mp3"]
 
-    def test_batch_includes_cost(self, agent, fake_audio):
-        """Results include cost_usd field."""
+    def test_batch_includes_v2_fields(self, agent, fake_audio):
+        """Batch results include Scribe v2 fields."""
         results = agent.transcribe_batch([fake_audio])
-        assert "cost_usd" in results["call1.mp3"]
+        entry = results["call1.mp3"]
+        assert "raw_text" in entry
+        assert "speakers_detected" in entry
+        assert "diarized" in entry
+        assert "cost_usd" in entry
 
     def test_batch_transcript_path_when_persisted(self, agent, fake_audio):
         """When persistence enabled, transcript_path should be set."""
@@ -148,5 +247,28 @@ class TestBatchTranscription:
 
         mock_client.speech_to_text.convert.side_effect = Exception("quota_exceeded")
         results = agent.transcribe_batch(files)
-        # Should stop after first file
         assert len(results) == 1
+
+
+# --- Tests: Timeout (CRIT-3) ---
+
+class TestTimeout:
+
+    def test_timeout_raises(self, mock_client, tmp_path):
+        """Should raise TimeoutError when API call exceeds timeout."""
+        import time as _time
+
+        def slow_call(**kwargs):
+            _time.sleep(5)
+            return _make_scribe_v2_result()
+
+        mock_client.speech_to_text.convert.side_effect = slow_call
+        agent = ElevenLabsSTTAgent(
+            client=mock_client,
+            persist_transcripts=False,
+            timeout_seconds=1,
+        )
+        f = tmp_path / "slow.mp3"
+        f.write_bytes(b"audio")
+        with pytest.raises(TimeoutError, match="timed out"):
+            agent.transcribe(f)

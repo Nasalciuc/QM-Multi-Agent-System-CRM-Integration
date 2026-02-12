@@ -1,6 +1,6 @@
 # CI/CD — QM Multi Agent System
 # Triggers: push/PR to main
-# Jobs: lint, test (153 tests), Docker build verification
+# Jobs: lint, test, Docker build verification
 
 name: CI
 

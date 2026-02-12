@@ -22,19 +22,9 @@ FILLER_WORDS = {
     "er", "err", "ah", "ahh",
 }
 
-# Fillers that need trailing comma/pause to distinguish from real words
-_FILLER_WITH_COMMA = {"like,", "you know,"}
-
 # Regex for standalone fillers (safe — won't match real words)
 FILLER_PATTERN = re.compile(
     r"\b(" + "|".join(re.escape(w) for w in FILLER_WORDS) + r")\b[,]?\s*",
-    re.IGNORECASE,
-)
-
-# Regex for comma-required fillers (only match "like," / "you know," at
-# sentence-interior positions, not when preceded by modal/aux such as "I'd")
-_FILLER_COMMA_PATTERN = re.compile(
-    r"(?<!I'd )(?<!I would )(?<!would )(?<!I )\b(like|you know),\s*",
     re.IGNORECASE,
 )
 
@@ -153,11 +143,11 @@ class TranscriptCleaner:
     def _remove_fillers(text: str) -> str:
         """Remove common filler words from transcript.
 
-        MED-4: Uses two patterns — standalone fillers (um, uh, etc.) and
-        comma-required fillers (like, you know) to avoid removing legitimate words.
+        HIGH-11: Only removes standalone fillers (um, uh, etc.).
+        Context-dependent fillers (like, you know) are preserved to avoid
+        removing legitimate words.
         """
         text = FILLER_PATTERN.sub("", text)
-        text = _FILLER_COMMA_PATTERN.sub("", text)
         return text
 
     @staticmethod

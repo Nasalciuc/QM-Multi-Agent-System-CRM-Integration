@@ -31,12 +31,20 @@ def main():
     parser.add_argument('--date-to', help='End date (YYYY-MM-DD)')
     parser.add_argument('--local', nargs='+', help='Local audio file paths')
     parser.add_argument('--folder', help='Local audio folder path')
+    parser.add_argument('--check', action='store_true', help='Health check: validate env, config, exit 0')
     args = parser.parse_args()
 
     # Load environment and config
     load_env()
     logger = setup_logging()
     config = load_config()
+
+    # MED-19: Health check mode — validate environment and exit
+    if args.check:
+        models_config = validate_models_config()
+        logger.info("Health check passed")
+        print("OK — config valid, env loaded")
+        sys.exit(0)
 
     # HIGH-9: Validate models.yaml at startup for clear error messages
     models_config = validate_models_config()
@@ -48,7 +56,7 @@ def main():
         required.extend(_RC_ENV_KEYS)
     validate_env(required)
 
-    # Initialize Agent 2: ElevenLabs STT
+    # Initialize Agent 2: ElevenLabs STT (Scribe v2 with diarization)
     from elevenlabs import ElevenLabs
     el_config = config.get("elevenlabs", {})
     el_client = ElevenLabs(api_key=os.environ.get('ELEVENLABS_API_KEY'))
@@ -56,6 +64,13 @@ def main():
         el_client,
         persist_transcripts=el_config.get("persist_transcripts", True),
         transcripts_folder=el_config.get("output_folder", "data/transcripts"),
+        model_id=el_config.get("model", "scribe_v2"),
+        diarize=el_config.get("diarize", True),
+        num_speakers=el_config.get("num_speakers"),
+        diarization_threshold=el_config.get("diarization_threshold"),
+        tag_audio_events=el_config.get("tag_audio_events", False),
+        language_code=el_config.get("language_code"),
+        keyterms=el_config.get("keyterms", []),
     )
 
     # Initialize Agent 3: QualityManagement (with ModelFactory fallback)

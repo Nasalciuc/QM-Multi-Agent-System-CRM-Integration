@@ -1,13 +1,15 @@
 """
 Agent 2: ElevenLabs Speech-to-Text
 
-Purpose: Transcribe audio files using ElevenLabs Scribe v1
-API: client.speech_to_text.convert(file=audio_file, model_id="scribe_v1")
+Purpose: Transcribe audio files using ElevenLabs Scribe v2 with speaker diarization
+API: client.speech_to_text.convert(file=audio_file, model_id="scribe_v2", ...)
 Cost: ~$0.005/min (or ~280 credits/min on ElevenLabs)
 
-Now persists transcripts to data/transcripts/ after successful transcription.
+Returns a dict per file with text, raw_text, speakers_detected, diarized transcript.
+Persists transcripts to data/transcripts/ after successful transcription.
 """
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from pathlib import Path
 from typing import Dict, List, Optional
 import time
@@ -32,7 +34,7 @@ def _get_redactor():
 
 
 class ElevenLabsSTTAgent:
-    """Agent: Speech-to-Text with ElevenLabs"""
+    """Agent: Speech-to-Text with ElevenLabs Scribe v2 + diarization."""
 
     # CRIT-3: Default timeout for STT API calls (seconds)
     DEFAULT_TIMEOUT_SECONDS = 300
@@ -40,9 +42,20 @@ class ElevenLabsSTTAgent:
     MAX_RETRIES = 2
     RETRY_BACKOFF_BASE = 2
 
-    def __init__(self, client, persist_transcripts: bool = True,
-                 transcripts_folder: str = "data/transcripts",
-                 timeout_seconds: int = 300):
+    def __init__(
+        self,
+        client,
+        persist_transcripts: bool = True,
+        transcripts_folder: str = "data/transcripts",
+        timeout_seconds: int = 300,
+        model_id: str = "scribe_v2",
+        diarize: bool = True,
+        num_speakers: Optional[int] = None,
+        diarization_threshold: Optional[float] = None,
+        tag_audio_events: bool = False,
+        language_code: Optional[str] = None,
+        keyterms: Optional[List[str]] = None,
+    ):
         """
         Initialize with ElevenLabs client.
 
@@ -50,41 +63,75 @@ class ElevenLabsSTTAgent:
             client: ElevenLabs client instance.
             persist_transcripts: Save transcripts to disk after transcription.
             transcripts_folder: Directory to save transcript files.
-
-        Usage:
-            from elevenlabs import ElevenLabs
-            client = ElevenLabs(api_key=os.environ['ELEVENLABS_API_KEY'])
-            agent_stt = ElevenLabsSTTAgent(client)
+            timeout_seconds: Max seconds to wait for STT API call.
+            model_id: ElevenLabs model ID (default: scribe_v2).
+            diarize: Enable speaker diarization.
+            num_speakers: Expected number of speakers (None = auto-detect).
+            diarization_threshold: Confidence threshold for speaker change.
+            tag_audio_events: Tag non-speech events (laughter, music, etc.).
+            language_code: ISO language code (None = auto-detect).
+            keyterms: Domain-specific terms to boost recognition accuracy.
         """
         self.client = client
         self.persist_transcripts = persist_transcripts
         self.transcripts_folder = Path(transcripts_folder)
         self.timeout_seconds = timeout_seconds
+        self.model_id = model_id
+        self.diarize = diarize
+        self.num_speakers = num_speakers
+        self.diarization_threshold = diarization_threshold
+        self.tag_audio_events = tag_audio_events
+        self.language_code = language_code
+        self.keyterms = keyterms or []
         if self.persist_transcripts:
             self.transcripts_folder.mkdir(parents=True, exist_ok=True)
-        logger.info("ElevenLabsSTTAgent initialized | Model: scribe_v1")
+        logger.info(
+            f"ElevenLabsSTTAgent initialized | Model: {self.model_id} | "
+            f"diarize={self.diarize}"
+        )
 
-    def transcribe(self, audio_path: Path) -> str:
-        """Transcribe a single audio file using ElevenLabs Scribe v1.
+    def transcribe(self, audio_path: Path) -> Dict:
+        """Transcribe a single audio file using ElevenLabs Scribe v2.
 
         MED-12: Retries transient failures with exponential backoff.
-        CRIT-3: Uses timeout to prevent indefinite blocking.
+        CRIT-3: Uses ThreadPoolExecutor for cross-platform timeout.
+
+        Returns:
+            Dict with keys: text, raw_text, speakers_detected,
+            language_code, diarized (bool).
         """
         last_error: Optional[Exception] = None
         for attempt in range(self.MAX_RETRIES + 1):
             try:
-                with open(audio_path, "rb") as audio_file:
-                    result = self.client.speech_to_text.convert(
-                        file=audio_file,
-                        model_id="scribe_v2",
-                        timeout=self.timeout_seconds,
-                    )
-                return result.text.strip()
+                result = self._call_api_with_timeout(audio_path)
+
+                # Build structured result from Scribe v2 response
+                raw_text = result.text.strip() if hasattr(result, 'text') else ""
+                words = getattr(result, 'words', None) or []
+                language = getattr(result, 'language_code', None) or self.language_code
+
+                # Build diarized transcript from word-level speaker tags
+                if self.diarize and words:
+                    diarized_text, speakers = self._build_diarized_transcript(words)
+                else:
+                    diarized_text = raw_text
+                    speakers = set()
+
+                return {
+                    "text": diarized_text,
+                    "raw_text": raw_text,
+                    "speakers_detected": len(speakers),
+                    "language_code": language,
+                    "diarized": bool(self.diarize and words),
+                }
+
             except Exception as e:
                 last_error = e
                 error_msg = str(e).lower()
                 # Don't retry quota/auth errors
-                if any(kw in error_msg for kw in ("quota_exceeded", "unauthorized", "forbidden", "invalid_api_key")):
+                if any(kw in error_msg for kw in (
+                    "quota_exceeded", "unauthorized", "forbidden", "invalid_api_key"
+                )):
                     raise
                 if attempt < self.MAX_RETRIES:
                     wait = self.RETRY_BACKOFF_BASE ** (attempt + 1)
@@ -95,9 +142,94 @@ class ElevenLabsSTTAgent:
                     time.sleep(wait)
         raise last_error  # type: ignore[misc]
 
-    def _save_transcript(self, filename: str, transcript: str) -> Optional[Path]:
-        """Save transcript to disk as .txt file.
+    def _call_api_with_timeout(self, audio_path: Path):
+        """CRIT-3: Cross-platform timeout using ThreadPoolExecutor.
+
+        signal.alarm() only works on Unix main thread; this approach
+        works on Windows, Linux, and inside threads.
         """
+        def _do_call():
+            with open(audio_path, "rb") as audio_file:
+                kwargs = {
+                    "file": audio_file,
+                    "model_id": self.model_id,
+                }
+                if self.diarize:
+                    kwargs["diarize"] = True
+                if self.num_speakers is not None:
+                    kwargs["num_speakers"] = self.num_speakers
+                if self.tag_audio_events:
+                    kwargs["tag_audio_events"] = True
+                if self.language_code:
+                    kwargs["language_code"] = self.language_code
+                return self.client.speech_to_text.convert(**kwargs)
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_do_call)
+            try:
+                return future.result(timeout=self.timeout_seconds)
+            except FuturesTimeoutError:
+                raise TimeoutError(
+                    f"STT API call timed out after {self.timeout_seconds}s "
+                    f"for {audio_path.name}"
+                )
+
+    @staticmethod
+    def _build_diarized_transcript(words: list) -> tuple:
+        """Build speaker-labeled transcript from Scribe v2 word-level data.
+
+        Scribe v2 returns a list of word objects, each with:
+          - text: str (the word)
+          - speaker_id: str | None (e.g. "speaker_0", "speaker_1")
+          - type: str ("word", "punctuation", "spacing")
+
+        Returns:
+            (diarized_text, speakers_set)
+        """
+        if not words:
+            return "", set()
+
+        lines = []
+        current_speaker = None
+        current_line_words = []
+        speakers: set = set()
+
+        for word_obj in words:
+            # Support both dict and object attribute access
+            if isinstance(word_obj, dict):
+                text = word_obj.get("text", "")
+                speaker = word_obj.get("speaker_id")
+                wtype = word_obj.get("type", "word")
+            else:
+                text = getattr(word_obj, "text", "")
+                speaker = getattr(word_obj, "speaker_id", None)
+                wtype = getattr(word_obj, "type", "word")
+
+            if speaker:
+                speakers.add(speaker)
+
+            # Speaker changed — flush current line
+            if speaker and speaker != current_speaker:
+                if current_line_words:
+                    label = _speaker_label(current_speaker)
+                    lines.append(f"{label}: {''.join(current_line_words).strip()}")
+                current_line_words = []
+                current_speaker = speaker
+
+            if wtype == "spacing":
+                current_line_words.append(" ")
+            else:
+                current_line_words.append(text)
+
+        # Flush remaining words
+        if current_line_words:
+            label = _speaker_label(current_speaker)
+            lines.append(f"{label}: {''.join(current_line_words).strip()}")
+
+        return "\n".join(lines), speakers
+
+    def _save_transcript(self, filename: str, transcript: str) -> Optional[Path]:
+        """Save transcript to disk as .txt file."""
         if not self.persist_transcripts:
             return None
         try:
@@ -138,15 +270,22 @@ class ElevenLabsSTTAgent:
 
             start = time.time()
             try:
-                transcript = self.transcribe(audio_path)
+                result = self.transcribe(audio_path)
                 elapsed = time.time() - start
 
+                # The full text for downstream consumers
+                transcript_text = result["text"]
+
                 # Persist transcript to disk
-                saved_path = self._save_transcript(filename, transcript)
+                saved_path = self._save_transcript(filename, transcript_text)
 
                 transcripts[filename] = {
                     "path": audio_path,
-                    "transcript": transcript,
+                    "transcript": transcript_text,
+                    "raw_text": result.get("raw_text", transcript_text),
+                    "speakers_detected": result.get("speakers_detected", 0),
+                    "diarized": result.get("diarized", False),
+                    "language_code": result.get("language_code"),
                     "duration": duration,
                     "process_time": round(elapsed, 2),
                     "credits_used": estimated_credits,
@@ -197,3 +336,18 @@ class ElevenLabsSTTAgent:
             # CRIT-6: Log actual error instead of swallowing silently
             logger.warning(f"Cannot read duration for {file_path.name}: {type(e).__name__}: {e}")
             return None
+
+
+def _speaker_label(speaker_id: Optional[str]) -> str:
+    """Map Scribe v2 speaker_id to human-readable label.
+
+    speaker_0 → Speaker 0, speaker_1 → Speaker 1, etc.
+    TranscriptCleaner will later remap these to Agent:/Client:.
+    """
+    if not speaker_id:
+        return "Speaker"
+    # "speaker_0" → "Speaker 0"
+    parts = speaker_id.split("_")
+    if len(parts) == 2 and parts[1].isdigit():
+        return f"Speaker {parts[1]}"
+    return speaker_id.replace("_", " ").title()

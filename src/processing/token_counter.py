@@ -21,8 +21,8 @@ except ImportError:
     _TIKTOKEN_AVAILABLE = False
     logger.info("tiktoken not installed — using word-based token estimates")
 
-# Fallback multiplier: average English word ≈ 1.3 tokens
-_WORD_TO_TOKEN_RATIO = 1.3
+# Fallback multiplier: multilingual safety margin ≈ 1.8 tokens per word
+_WORD_TO_TOKEN_RATIO = 1.8
 
 
 class TokenCounter:

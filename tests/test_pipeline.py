@@ -34,10 +34,28 @@ def mock_agents(tmp_path):
     agent_03 = MagicMock()  # QualityManagementAgent
     agent_04 = MagicMock()  # IntegrationAgent
 
-    # Default: agent_02 returns 2 successful transcripts
+    # Default: agent_02 returns 2 successful transcripts (Scribe v2 format)
     agent_02.transcribe_batch.return_value = {
-        "call1.mp3": {"transcript": "Agent: Hello\nClient: Hi there how are you", "status": "Success", "cost_usd": 0.01, "duration": 5.0},
-        "call2.mp3": {"transcript": "Agent: Welcome\nClient: Thanks for calling us", "status": "Success", "cost_usd": 0.01, "duration": 3.0},
+        "call1.mp3": {
+            "transcript": "Speaker 0: Hello\nSpeaker 1: Hi there how are you",
+            "raw_text": "Hello Hi there how are you",
+            "speakers_detected": 2,
+            "diarized": True,
+            "language_code": "en",
+            "status": "Success",
+            "cost_usd": 0.01,
+            "duration": 5.0,
+        },
+        "call2.mp3": {
+            "transcript": "Speaker 0: Welcome\nSpeaker 1: Thanks for calling us",
+            "raw_text": "Welcome Thanks for calling us",
+            "speakers_detected": 2,
+            "diarized": True,
+            "language_code": "en",
+            "status": "Success",
+            "cost_usd": 0.01,
+            "duration": 3.0,
+        },
     }
 
     # Default: agent_03 returns success
@@ -185,3 +203,41 @@ class TestGracefulShutdown:
         assert _GracefulShutdown.is_triggered()
         _GracefulShutdown.reset()
         assert not _GracefulShutdown.is_triggered()
+
+
+# --- Tests: Data Flow Contracts (TEST-25) ---
+
+class TestDataFlowContracts:
+    """Verify data shapes flowing between pipeline stages."""
+
+    def test_stt_batch_output_shape(self, mock_agents):
+        """Agent 2 batch output must have transcript, status, and v2 fields."""
+        _, a2, _, _ = mock_agents
+        batch = a2.transcribe_batch.return_value
+        for filename, data in batch.items():
+            assert isinstance(filename, str)
+            assert "transcript" in data
+            assert "status" in data
+            assert "raw_text" in data
+            assert "speakers_detected" in data
+
+    def test_evaluation_output_shape(self, pipeline, mock_agents):
+        """Pipeline evaluation output must have required fields."""
+        results = pipeline.run_local([Path("call1.mp3")])
+        assert len(results) > 0
+        e = results[0]
+        required = {"filename", "transcript", "overall_score", "score_data",
+                     "criteria", "overall_assessment", "status", "cost_usd"}
+        assert required.issubset(set(e.keys())), f"Missing: {required - set(e.keys())}"
+
+    def test_circuit_breaker_sentinel_filtered_from_export(self, mock_agents):
+        """Circuit breaker rows must NOT reach agent_04.export_all()."""
+        a1, a2, a3, a4 = mock_agents
+        a3.evaluate_call.return_value = {"error": "API down", "call_type": "First Call"}
+        pipeline = Pipeline(a1, a2, a3, a4, max_consecutive_failures=1, delay_between_evaluations=0)
+        pipeline.run_local([Path("call1.mp3")])
+        # export_all should not be called (all evals failed / only breaker sentinel)
+        if a4.export_all.called:
+            args = a4.export_all.call_args[0][0]
+            for e in args:
+                assert e.get("status") != "CIRCUIT_BREAKER_TRIGGERED"

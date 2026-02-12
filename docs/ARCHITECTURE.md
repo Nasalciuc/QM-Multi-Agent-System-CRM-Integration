@@ -148,7 +148,7 @@ Creates LLM clients from `config/models.yaml`. Provides:
 - `RingCentralAgent`: searches and downloads from RingCentral API via SDK
 
 **Agent 2 — ElevenLabsSTTAgent**
-- Transcribes audio using ElevenLabs Scribe v1
+- Transcribes audio using ElevenLabs Scribe v2 with speaker diarization
 - Batch processing with progress tracking
 - Persists transcripts to `data/transcripts/`
 - Cost tracking (~$0.005/min)
@@ -169,7 +169,7 @@ Creates LLM clients from `config/models.yaml`. Provides:
 ```
 1. Audio files (.mp3/.wav)
    ↓
-2. ElevenLabs Scribe v1 → raw transcript (Speaker 0/1 labels)
+2. ElevenLabs Scribe v2 → raw transcript with word-level diarization
    ↓
 3. TranscriptCleaner → Agent/Client labels, no fillers
    ↓

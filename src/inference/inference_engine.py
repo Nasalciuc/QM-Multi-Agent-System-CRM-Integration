@@ -31,6 +31,7 @@ def _json_serializer(obj):
 
     CRIT-4: Only handles known types; raises TypeError for unexpected objects
     instead of silently stringifying them (which can corrupt data).
+    MED-21: Also handles numpy scalars, Decimal, and bytes.
     """
     if isinstance(obj, Path):
         return str(obj)
@@ -42,6 +43,27 @@ def _json_serializer(obj):
         pass
     if isinstance(obj, set):
         return sorted(obj)
+    # MED-21: numpy scalar → Python native
+    try:
+        import numpy as np
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+    except ImportError:
+        pass
+    # MED-21: Decimal → float
+    try:
+        from decimal import Decimal
+        if isinstance(obj, Decimal):
+            return float(obj)
+    except ImportError:
+        pass
+    # MED-21: bytes → utf-8 string
+    if isinstance(obj, bytes):
+        return obj.decode("utf-8", errors="replace")
     raise TypeError(f"Non-serializable object: {type(obj).__name__}")
 
 
@@ -73,6 +95,7 @@ class InferenceEngine:
         self._cache_lock = threading.Lock()  # CRIT-4: Thread-safe cache access
         if self._enable_cache and self._cache_dir is not None:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
+            self._cleanup_cache()  # MED-20: Remove stale entries at startup
 
     # Whitelist of keys safe to persist in cache (CRIT-1: no raw_response, no secrets)
     _CACHE_SAFE_KEYS = frozenset({
@@ -81,6 +104,23 @@ class InferenceEngine:
         "tokens_used", "cost_usd", "eval_time_seconds", "is_followup",
         "truncated", "pii_redacted",
     })
+
+    def _cleanup_cache(self) -> None:
+        """MED-20: Remove cache entries older than TTL at startup."""
+        if not self._cache_dir:
+            return
+        now = time.time()
+        removed = 0
+        for path in self._cache_dir.glob("*.json"):
+            try:
+                age = now - path.stat().st_mtime
+                if age > self._cache_ttl:
+                    path.unlink(missing_ok=True)
+                    removed += 1
+            except OSError:
+                pass
+        if removed:
+            logger.info(f"Cache cleanup: removed {removed} stale entries")
 
     def evaluate(
         self,
@@ -108,9 +148,6 @@ class InferenceEngine:
         first_key = list(criteria.keys())[0] if criteria else "criterion_1"
 
         # Build prompts
-        # DESIGN-22: Escape curly braces in transcript to prevent
-        # format_map() from interpreting transcript content as variables
-        safe_transcript = transcript.replace("{", "{{").replace("}", "}}")
         system_prompt = self._prompts.render(
             "qa_system",
             call_type=call_type,
@@ -119,7 +156,7 @@ class InferenceEngine:
         user_prompt = self._prompts.render(
             "qa_user",
             call_type=call_type,
-            transcript=safe_transcript,
+            transcript=transcript,
             criteria_count=criteria_count,
             criteria_text=criteria_text,
             first_criterion_key=first_key,

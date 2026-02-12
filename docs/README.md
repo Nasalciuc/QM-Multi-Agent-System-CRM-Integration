@@ -7,7 +7,7 @@ Automated 4-agent pipeline for evaluating call center recordings against 24 qual
 | Agent | Purpose | Technology |
 |-------|---------|------------|
 | **Agent 1** — Audio | Download / find call recordings | RingCentral SDK or local files |
-| **Agent 2** — Transcription | Speech-to-text with diarization | ElevenLabs Scribe v1 |
+| **Agent 2** — Transcription | Speech-to-text with diarization | ElevenLabs Scribe v2 |
 | **Agent 3** — Evaluation | Score transcript against 24 QA criteria | OpenRouter / OpenAI GPT-4o |
 | **Agent 4** — Export | Generate Excel, CSV, JSON reports | pandas + openpyxl |
 

@@ -96,10 +96,10 @@ class TestTranscriptCleaner:
         TranscriptCleaner(direction="OUTBOUND")
         TranscriptCleaner(direction="Inbound")
 
-    # --- Filler Pattern Context-Awareness (HIGH-11) ---
+    # --- Filler Pattern — like/you know preserved (HIGH-11) ---
 
-    def test_filler_like_comma_not_removed_after_modal(self):
-        """HIGH-11: 'I'd like,' should NOT be stripped as a filler."""
+    def test_filler_like_comma_preserved(self):
+        """HIGH-11: 'like,' is now preserved — too risky to auto-remove."""
         cleaner = TranscriptCleaner(remove_fillers=True)
         raw = "Agent: I'd like, maybe a different plan"
         result = cleaner.clean(raw)

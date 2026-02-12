@@ -54,13 +54,21 @@ class AudioFileFinder:
             audio = AudioSegment.from_file(str(file_path))
             duration_minutes = len(audio) / 1000 / 60
             return round(duration_minutes, 2)
+        except ImportError:
+            logger.warning(f"pydub not installed — cannot read duration for {file_path.name}")
+            return None
         except Exception as e:
-            logger.warning(f"Cannot read duration for {file_path.name}: {e}")
+            # CRIT-6: Log actual error instead of swallowing silently
+            logger.warning(f"Cannot read duration for {file_path.name}: {type(e).__name__}: {e}")
             return None
 
 
 class RingCentralAgent:
     """Agent: Download audio from RingCentral via Official SDK"""
+
+    # CRIT-2: Max file size for downloads (500 MB)
+    MAX_FILE_SIZE_MB = 500
+    MAX_DOWNLOAD_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
     def __init__(self, platform, download_folder: str = "data/audio", delay_seconds: float = 1.5):
         """
@@ -125,7 +133,23 @@ class RingCentralAgent:
                 url = None
 
         logger.info(f"Found {len(all_records)} recordings with audio")
-        return all_records
+
+        # MED-16: Deduplicate by sessionId (same call may appear in multiple legs)
+        seen_sessions: set = set()
+        deduped: List[Dict] = []
+        for rec in all_records:
+            sid = rec.get("sessionId")
+            if sid and sid in seen_sessions:
+                logger.debug(f"Skipping duplicate sessionId {sid}")
+                continue
+            if sid:
+                seen_sessions.add(sid)
+            deduped.append(rec)
+
+        if len(deduped) < len(all_records):
+            logger.info(f"Deduplicated recordings: {len(all_records)} → {len(deduped)}")
+
+        return deduped
 
     def download_audio(self, call_record: dict) -> Optional[str]:
         """Download a single recording. Returns filepath or None on error."""
@@ -142,8 +166,18 @@ class RingCentralAgent:
                 return str(filepath)
 
             response = self.platform.get(content_uri)
+            content = response.response().content
+
+            # CRIT-2: Reject files that exceed size limit
+            if len(content) > self.MAX_DOWNLOAD_BYTES:
+                logger.error(
+                    f"Recording {call_id} exceeds size limit: "
+                    f"{len(content)} bytes > {self.MAX_DOWNLOAD_BYTES} bytes"
+                )
+                return None
+
             with open(filepath, "wb") as f:
-                f.write(response.response().content)
+                f.write(content)
 
             time.sleep(self.delay_seconds)
             logger.info(f"Downloaded: {filename}")

@@ -216,7 +216,9 @@ class TestListeningRatio:
         assert abs(result["agent_percentage"] + result["client_percentage"] - 100.0) < 0.1
 
     def test_speaker_format(self, agent):
-        transcript = "Speaker 0: Hello\nSpeaker 1: Hi there"
+        """After #15, raw Speaker N: format is no longer recognized —
+        use cleaned Agent:/Client: labels."""
+        transcript = "Agent: Hello\nClient: Hi there"
         result = agent.calculate_listening_ratio(transcript)
         assert result["total_words"] > 0
 
@@ -233,8 +235,9 @@ class TestListeningRatio:
         assert result["client_percentage"] == 0.0
 
     def test_elevenlabs_speaker_format(self, agent):
-        """ElevenLabs Scribe format with Speaker 0/1 labels."""
-        transcript = "Speaker 0: Hello this is John from the company\nSpeaker 1: Hi I need help with my booking"
+        """MED-15: After cleaning, Speaker 0/1 → Agent/Client.
+        Listening ratio now only accepts cleaned labels."""
+        transcript = "Agent: Hello this is John from the company\nClient: Hi I need help with my booking"
         result = agent.calculate_listening_ratio(transcript)
         assert result["agent_percentage"] > 0
         assert result["client_percentage"] > 0

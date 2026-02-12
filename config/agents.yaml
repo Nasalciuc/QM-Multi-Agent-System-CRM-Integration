@@ -11,11 +11,17 @@ ringcentral:
   with_recording: true
 
 elevenlabs:
-  model: "scribe_v1"           # ElevenLabs Scribe v1
+  model: "scribe_v2"           # ElevenLabs Scribe v2 (with diarization)
   credits_per_minute: 280      # ~280 credits/min on ElevenLabs
   cost_per_minute: 0.005       # $0.005/min
   output_folder: "data/transcripts"
   persist_transcripts: true    # Save transcripts to disk after transcription
+  diarize: true                # Enable speaker diarization
+  num_speakers: null            # null = auto-detect speaker count
+  diarization_threshold: null   # null = use ElevenLabs default
+  tag_audio_events: false       # Tag non-speech events (laughter, music)
+  language_code: null            # null = auto-detect language
+  keyterms: []                  # Domain-specific terms to boost recognition
 
 openrouter:
   model: "gpt-4o-2024-11-20"  # Primary model (via OpenRouter)

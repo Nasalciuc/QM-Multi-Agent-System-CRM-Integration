@@ -76,10 +76,18 @@ class Pipeline:
         self._providers_used: set = set()  # HIGH-12: track which providers were used
         self._cost_warning_issued = False
 
-        # CRIT-1: Register signal handlers here (not at module import time)
-        signal.signal(signal.SIGINT, _GracefulShutdown.trigger)
+        # CRIT-1: Register signal handlers, save old ones so we can restore later
+        self._old_sigint = signal.signal(signal.SIGINT, _GracefulShutdown.trigger)
+        self._old_sigterm = None
         if hasattr(signal, 'SIGTERM'):
-            signal.signal(signal.SIGTERM, _GracefulShutdown.trigger)
+            self._old_sigterm = signal.signal(signal.SIGTERM, _GracefulShutdown.trigger)
+
+    def _restore_signals(self) -> None:
+        """Restore original signal handlers saved during __init__."""
+        if self._old_sigint is not None:
+            signal.signal(signal.SIGINT, self._old_sigint)
+        if self._old_sigterm is not None and hasattr(signal, 'SIGTERM'):
+            signal.signal(signal.SIGTERM, self._old_sigterm)
 
     def run(self, date_from: str, date_to: Optional[str] = None) -> List[Dict]:
         """Full pipeline: RingCentral -> ElevenLabs -> QA -> Export"""
@@ -132,7 +140,7 @@ class Pipeline:
         """Steps 2-4: Transcribe, evaluate, export."""
 
         # Step 2: Transcribe with ElevenLabs
-        print("STEP 2: Transcribing with ElevenLabs Scribe v1...")
+        print("STEP 2: Transcribing with ElevenLabs Scribe v2...")
         transcripts = self.stt_agent.transcribe_batch(audio_files)
         success_count = sum(1 for v in transcripts.values() if v.get("status") == "Success")
         # MED-8: Aggregate STT costs

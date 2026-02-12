@@ -114,8 +114,14 @@ class QualityManagementAgent:
             _, call_type = self.detect_call_type(filename)
             return {
                 "error": f"Transcript too short ({word_count} words)",
+                "status": "TOO_SHORT",
                 "call_type": call_type,
                 "word_count": word_count,
+                "criteria": {},
+                "overall_assessment": f"Transcript too short for evaluation ({word_count} words, minimum {self.MIN_TRANSCRIPT_WORDS})",
+                "strengths": [],
+                "improvements": [],
+                "critical_gaps": [],
             }
 
         is_followup, call_type = self.detect_call_type(filename)
@@ -235,33 +241,16 @@ class QualityManagementAgent:
     def calculate_listening_ratio(self, transcript: str) -> Dict[str, float]:
         """Estimate agent vs client talking percentage from transcript.
 
-        Supports cleaned labels (Agent:/Client:) and raw ElevenLabs
-        (Speaker 0:/1:) formats. Cleaned transcripts (post-TranscriptCleaner)
-        will always have Agent:/Client: labels.
-
-        Note: For raw transcripts with Speaker N: format, the first speaker
-        is assigned as agent (outbound assumption). For accurate results,
-        run TranscriptCleaner first.
+        Expects cleaned transcripts with Agent:/Client: labels
+        (produced by TranscriptCleaner). Lines without recognized
+        speaker labels are skipped.
         """
         lines = transcript.strip().split("\n")
         agent_words = 0
         client_words = 0
 
-        # Priority 1: Cleaned labels
         agent_prefixes = ("agent:", "representative:", "rep:", "advisor:")
         client_prefixes = ("client:", "customer:", "caller:", "guest:")
-
-        # Priority 2: Raw Speaker N: labels (fallback)
-        first_speaker = None
-        has_speaker_labels = False
-        for line in lines:
-            line_stripped = line.lower().strip()
-            match = re.match(r'^(speaker \d+):', line_stripped)
-            if match:
-                if first_speaker is None:
-                    first_speaker = match.group(1)
-                has_speaker_labels = True
-                break
 
         for line in lines:
             line_lower = line.lower().strip()
@@ -269,22 +258,9 @@ class QualityManagementAgent:
                 continue
             word_count = len(line.split())
 
-            # Check explicit labels first
-            is_agent = line_lower.startswith(agent_prefixes)
-            is_client = line_lower.startswith(client_prefixes)
-
-            # Fallback: Speaker N: format
-            if not is_agent and not is_client and has_speaker_labels:
-                speaker_match = re.match(r'^(speaker \d+):', line_lower)
-                if speaker_match:
-                    if first_speaker and speaker_match.group(1) == first_speaker:
-                        is_agent = True
-                    else:
-                        is_client = True
-
-            if is_agent:
+            if line_lower.startswith(agent_prefixes):
                 agent_words += word_count
-            elif is_client:
+            elif line_lower.startswith(client_prefixes):
                 client_words += word_count
             # Skip unlabeled lines
 

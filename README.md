@@ -1,7 +1,7 @@
 # 🎯 QM Multi Agent System — Call Center Quality Assurance
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-160%20passed-brightgreen.svg)](#tests)
+[![Tests](https://img.shields.io/badge/Tests-173%20passed-brightgreen.svg)](#tests)
 [![License](https://img.shields.io/badge/License-Private-lightgrey.svg)](#)
 
 Automated **4-agent pipeline** that evaluates call center recordings against **24 quality criteria** using LLM-powered analysis.
@@ -13,7 +13,7 @@ Automated **4-agent pipeline** that evaluates call center recordings against **2
 | Agent | Purpose | Technology |
 |-------|---------|------------|
 | **Agent 1** — Audio | Download / find call recordings | RingCentral SDK or local files |
-| **Agent 2** — Transcription | Speech-to-text with diarization | ElevenLabs Scribe v1 |
+| **Agent 2** — Transcription | Speech-to-text with diarization | ElevenLabs Scribe v2 |
 | **Agent 3** — Evaluation | Score transcript against 24 QA criteria | OpenRouter / OpenAI GPT-4o |
 | **Agent 4** — Export | Generate Excel, CSV, JSON reports | pandas + openpyxl |
 
@@ -81,7 +81,7 @@ src/
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ELEVENLABS_API_KEY` | ✅ | ElevenLabs Scribe v1 STT |
+| `ELEVENLABS_API_KEY` | ✅ | ElevenLabs Scribe v2 STT |
 | `OPENROUTER_API_KEY` | ✅ | OpenRouter LLM evaluation |
 | `OPENAI_API_KEY` | — | Direct OpenAI fallback |
 | `ANTHROPIC_API_KEY` | — | Claude fallback |
@@ -105,24 +105,25 @@ Scoring: **YES** (100%) · **PARTIAL** (50%) · **NO** (0%) · **N/A** (excluded
 ## Tests
 
 ```bash
-python -m pytest tests/ -v            # 160 tests
+python -m pytest tests/ -v            # 173 tests
 python -m pytest tests/ -v --cov=src  # with coverage
 ```
 
 | Test File | Count | Scope |
 |-----------|-------|-------|
 | `test_agent_01.py` | 7 | Audio file discovery |
-| `test_agent_02.py` | 11 | ElevenLabs transcription |
+| `test_agent_02.py` | 16 | ElevenLabs transcription (Scribe v2) |
 | `test_agent_03.py` | 24 | QA evaluation + scoring |
 | `test_agent_04.py` | 9 | Export (Excel/CSV/JSON/webhook) |
 | `test_inference_engine.py` | 15 | Inference engine + caching |
+| `test_integration.py` | 3 | End-to-end smoke test |
 | `test_model_factory.py` | 12 | Model factory + fallback chain |
-| `test_pipeline.py` | 10 | Pipeline orchestration |
+| `test_pipeline.py` | 13 | Pipeline orchestration |
 | `test_processing.py` | 32 | Cleaner, counter, chunker, PII |
 | `test_prompt_loader.py` | 10 | Prompt template loading |
 | `test_response_parser.py` | 17 | Response parsing + validation |
 | `test_scoring.py` | 12 | Parameterized scoring edge cases |
-| **Total** | **160** | |
+| **Total** | **173** | |
 
 ## Docker
 
