@@ -39,7 +39,8 @@ def main():
     config = load_config()
 
     # HIGH-9: Validate models.yaml at startup for clear error messages
-    validate_models_config()
+    models_config = validate_models_config()
+    logger.info(f"models.yaml validated: {len(models_config.get('fallbacks', []))} fallback(s) configured")
 
     # Validate required env vars upfront
     required = list(_BASE_ENV_KEYS)

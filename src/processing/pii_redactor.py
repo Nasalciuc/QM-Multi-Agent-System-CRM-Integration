@@ -32,12 +32,15 @@ logger = logging.getLogger("qa_system.processing")
 # ── Regex patterns ──────────────────────────────────────────────────
 
 # Phone: (123) 456-7890, 123-456-7890, +1-123-456-7890, 1234567890
-# MED-2: Require separator between groups to reduce false positives on order numbers
+# CRIT-5: Also matches unseparated 10-digit numbers (e.g., 5551234567)
 _PHONE_PATTERN = re.compile(
     r"(?<!\d)"
-    r"(?:\+?1[-.\s]?)?"
-    r"(?:\(?\d{3}\)?[-.\s])"              # area code MUST have separator
-    r"\d{3}[-.\s]?\d{4}"
+    r"(?:\+?1[-.\ s]?)?"
+    r"(?:"
+    r"\(?\d{3}\)?[-.\ s]\d{3}[-.\ s]?\d{4}"  # with separator after area code
+    r"|"
+    r"\d{10}"                                    # unseparated 10-digit
+    r")"
     r"(?!\d)"
 )
 

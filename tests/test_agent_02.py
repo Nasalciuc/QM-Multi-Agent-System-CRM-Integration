@@ -82,6 +82,25 @@ class TestPersistence:
         result = agent_no_persist._save_transcript("call1.mp3", "text")
         assert result is None
 
+    def test_save_transcript_redacts_pii(self, agent, tmp_path):
+        """TEST-24: _save_transcript must redact PII before writing to disk."""
+        transcript_with_pii = (
+            "Customer: My number is 555-123-4567 and "
+            "my email is john@example.com. "
+            "My SSN is 123-45-6789."
+        )
+        path = agent._save_transcript("call_pii.mp3", transcript_with_pii)
+        assert path is not None
+        saved_text = path.read_text(encoding="utf-8")
+        # Raw PII must NOT appear in saved file
+        assert "555-123-4567" not in saved_text
+        assert "john@example.com" not in saved_text
+        assert "123-45-6789" not in saved_text
+        # Redaction tokens must be present instead
+        assert "[PHONE]" in saved_text
+        assert "[EMAIL]" in saved_text
+        assert "[SSN]" in saved_text
+
 
 # --- Tests: Batch Transcription ---
 

@@ -60,6 +60,11 @@ class IntegrationAgent:
         Export evaluations to Excel + CSV + JSON.
         Returns dict of filepaths: {"excel": ..., "csv_summary": ..., "csv_details": ..., "json": ...}
         """
+        # HIGH-9: Guard against empty evaluations list
+        if not evaluations:
+            logger.warning("export_all called with empty evaluations list")
+            return {}
+
         # Use single timestamp for all exports to avoid filename drift
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         base = self.output_folder / f"QM_{timestamp}"

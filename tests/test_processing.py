@@ -84,6 +84,27 @@ class TestTranscriptCleaner:
         assert "   " not in result  # no triple spaces
         assert "\n\n" not in result  # no blank lines
 
+    # --- Direction Validation (MED-13) ---
+
+    def test_invalid_direction_raises(self):
+        """MED-13: Invalid direction should raise ValueError, not silently default."""
+        with pytest.raises(ValueError, match="Invalid direction"):
+            TranscriptCleaner(direction="sideways")
+
+    def test_valid_directions_accepted(self):
+        """Both 'inbound' and 'outbound' should work (case-insensitive)."""
+        TranscriptCleaner(direction="OUTBOUND")
+        TranscriptCleaner(direction="Inbound")
+
+    # --- Filler Pattern Context-Awareness (HIGH-11) ---
+
+    def test_filler_like_comma_not_removed_after_modal(self):
+        """HIGH-11: 'I'd like,' should NOT be stripped as a filler."""
+        cleaner = TranscriptCleaner(remove_fillers=True)
+        raw = "Agent: I'd like, maybe a different plan"
+        result = cleaner.clean(raw)
+        assert "like" in result.lower()
+
 
 # ═══════════════════════════════════════════════════════════════════
 # TokenCounter
@@ -245,3 +266,11 @@ class TestPIIRedactor:
         result = redactor.redact(text)
         assert "[PHONE]" in result["text"]
         assert "me@test.com" in result["text"]  # email NOT redacted
+
+    def test_redact_phone_unseparated(self):
+        """CRIT-5: Unseparated 10-digit phone numbers must be redacted."""
+        redactor = PIIRedactor()
+        result = redactor.redact("Call me at 5551234567 please.")
+        assert "[PHONE]" in result["text"]
+        assert "5551234567" not in result["text"]
+        assert result["pii_found"]["phone"] >= 1

@@ -1,7 +1,7 @@
 # 🎯 QM Multi Agent System — Call Center Quality Assurance
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-90%20passed-brightgreen.svg)](#tests)
+[![Tests](https://img.shields.io/badge/Tests-160%20passed-brightgreen.svg)](#tests)
 [![License](https://img.shields.io/badge/License-Private-lightgrey.svg)](#)
 
 Automated **4-agent pipeline** that evaluates call center recordings against **24 quality criteria** using LLM-powered analysis.
@@ -105,19 +105,24 @@ Scoring: **YES** (100%) · **PARTIAL** (50%) · **NO** (0%) · **N/A** (excluded
 ## Tests
 
 ```bash
-python -m pytest tests/ -v            # 90 tests
+python -m pytest tests/ -v            # 160 tests
 python -m pytest tests/ -v --cov=src  # with coverage
 ```
 
 | Test File | Count | Scope |
 |-----------|-------|-------|
 | `test_agent_01.py` | 7 | Audio file discovery |
-| `test_agent_02.py` | 9 | ElevenLabs transcription |
-| `test_agent_03.py` | 19 | QA evaluation + scoring |
+| `test_agent_02.py` | 11 | ElevenLabs transcription |
+| `test_agent_03.py` | 24 | QA evaluation + scoring |
 | `test_agent_04.py` | 9 | Export (Excel/CSV/JSON/webhook) |
-| `test_processing.py` | 22 | Cleaner, counter, chunker, PII |
+| `test_inference_engine.py` | 15 | Inference engine + caching |
+| `test_model_factory.py` | 12 | Model factory + fallback chain |
+| `test_pipeline.py` | 10 | Pipeline orchestration |
+| `test_processing.py` | 32 | Cleaner, counter, chunker, PII |
+| `test_prompt_loader.py` | 10 | Prompt template loading |
+| `test_response_parser.py` | 17 | Response parsing + validation |
 | `test_scoring.py` | 12 | Parameterized scoring edge cases |
-| **Total** | **90** | |
+| **Total** | **160** | |
 
 ## Docker
 

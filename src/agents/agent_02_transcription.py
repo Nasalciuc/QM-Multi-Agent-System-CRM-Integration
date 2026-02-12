@@ -34,8 +34,15 @@ def _get_redactor():
 class ElevenLabsSTTAgent:
     """Agent: Speech-to-Text with ElevenLabs"""
 
+    # CRIT-3: Default timeout for STT API calls (seconds)
+    DEFAULT_TIMEOUT_SECONDS = 300
+    # MED-12: Retry config for transient ElevenLabs failures
+    MAX_RETRIES = 2
+    RETRY_BACKOFF_BASE = 2
+
     def __init__(self, client, persist_transcripts: bool = True,
-                 transcripts_folder: str = "data/transcripts"):
+                 transcripts_folder: str = "data/transcripts",
+                 timeout_seconds: int = 300):
         """
         Initialize with ElevenLabs client.
 
@@ -52,24 +59,44 @@ class ElevenLabsSTTAgent:
         self.client = client
         self.persist_transcripts = persist_transcripts
         self.transcripts_folder = Path(transcripts_folder)
+        self.timeout_seconds = timeout_seconds
         if self.persist_transcripts:
             self.transcripts_folder.mkdir(parents=True, exist_ok=True)
         logger.info("ElevenLabsSTTAgent initialized | Model: scribe_v1")
 
     def transcribe(self, audio_path: Path) -> str:
-        """Transcribe a single audio file using ElevenLabs Scribe v1."""
-        with open(audio_path, "rb") as audio_file:
-            result = self.client.speech_to_text.convert(
-                file=audio_file,
-                model_id="scribe_v1"
-            )
-        return result.text.strip()
+        """Transcribe a single audio file using ElevenLabs Scribe v1.
+
+        MED-12: Retries transient failures with exponential backoff.
+        CRIT-3: Uses timeout to prevent indefinite blocking.
+        """
+        last_error: Optional[Exception] = None
+        for attempt in range(self.MAX_RETRIES + 1):
+            try:
+                with open(audio_path, "rb") as audio_file:
+                    result = self.client.speech_to_text.convert(
+                        file=audio_file,
+                        model_id="scribe_v2",
+                        timeout=self.timeout_seconds,
+                    )
+                return result.text.strip()
+            except Exception as e:
+                last_error = e
+                error_msg = str(e).lower()
+                # Don't retry quota/auth errors
+                if any(kw in error_msg for kw in ("quota_exceeded", "unauthorized", "forbidden", "invalid_api_key")):
+                    raise
+                if attempt < self.MAX_RETRIES:
+                    wait = self.RETRY_BACKOFF_BASE ** (attempt + 1)
+                    logger.warning(
+                        f"Transient STT error (attempt {attempt + 1}/{self.MAX_RETRIES + 1}): {e}. "
+                        f"Retrying in {wait}s..."
+                    )
+                    time.sleep(wait)
+        raise last_error  # type: ignore[misc]
 
     def _save_transcript(self, filename: str, transcript: str) -> Optional[Path]:
         """Save transcript to disk as .txt file.
-
-        HIGH-7: Redacts PII before persisting to prevent raw customer data
-        from being stored on disk.
         """
         if not self.persist_transcripts:
             return None
@@ -163,5 +190,10 @@ class ElevenLabsSTTAgent:
             from pydub import AudioSegment
             audio = AudioSegment.from_file(str(file_path))
             return round(len(audio) / 1000 / 60, 2)
-        except Exception:
+        except ImportError:
+            logger.warning(f"pydub not installed — cannot read duration for {file_path.name}")
+            return None
+        except Exception as e:
+            # CRIT-6: Log actual error instead of swallowing silently
+            logger.warning(f"Cannot read duration for {file_path.name}: {type(e).__name__}: {e}")
             return None

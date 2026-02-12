@@ -14,6 +14,7 @@ import os
 import tempfile
 import time
 import logging
+import threading
 from pathlib import Path
 from typing import Dict, Optional, Set
 
@@ -62,11 +63,14 @@ class InferenceEngine:
         prompt_loader: Optional[PromptLoader] = None,
         cache_dir: Optional[str] = "data/cache",
         enable_cache: bool = True,
+        cache_ttl_seconds: int = 7 * 24 * 3600,  # MED-20: 7-day default TTL
     ):
         self._factory = model_factory
         self._prompts = prompt_loader or PromptLoader()
         self._cache_dir: Optional[Path] = Path(cache_dir) if cache_dir else None
         self._enable_cache = enable_cache and self._cache_dir is not None
+        self._cache_ttl = cache_ttl_seconds
+        self._cache_lock = threading.Lock()  # CRIT-4: Thread-safe cache access
         if self._enable_cache and self._cache_dir is not None:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -104,6 +108,9 @@ class InferenceEngine:
         first_key = list(criteria.keys())[0] if criteria else "criterion_1"
 
         # Build prompts
+        # DESIGN-22: Escape curly braces in transcript to prevent
+        # format_map() from interpreting transcript content as variables
+        safe_transcript = transcript.replace("{", "{{").replace("}", "}}")
         system_prompt = self._prompts.render(
             "qa_system",
             call_type=call_type,
@@ -112,7 +119,7 @@ class InferenceEngine:
         user_prompt = self._prompts.render(
             "qa_user",
             call_type=call_type,
-            transcript=transcript,
+            transcript=safe_transcript,
             criteria_count=criteria_count,
             criteria_text=criteria_text,
             first_criterion_key=first_key,
@@ -228,16 +235,23 @@ class InferenceEngine:
         return hashlib.sha256(content.encode()).hexdigest()
 
     def _load_cache(self, key: str) -> Optional[Dict]:
-        """Load cached evaluation result."""
+        """Load cached evaluation result (thread-safe, TTL-aware)."""
         if not self._cache_dir:
             return None
         path = self._cache_dir / f"{key}.json"
-        if path.exists():
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, OSError):
-                return None
+        with self._cache_lock:  # CRIT-4: Prevent race condition
+            if path.exists():
+                try:
+                    # MED-20: Check TTL — expire stale cache entries
+                    age = time.time() - path.stat().st_mtime
+                    if age > self._cache_ttl:
+                        logger.debug(f"Cache expired (age={age:.0f}s > ttl={self._cache_ttl}s): {key[:12]}")
+                        path.unlink(missing_ok=True)
+                        return None
+                    with open(path, "r", encoding="utf-8") as f:
+                        return json.load(f)
+                except (json.JSONDecodeError, OSError):
+                    return None
         return None
 
     def _save_cache(self, key: str, data: Dict) -> None:
@@ -253,19 +267,20 @@ class InferenceEngine:
         safe_data = {k: v for k, v in data.items() if k in self._CACHE_SAFE_KEYS}
         fd = None
         tmp_path = None
-        try:
-            fd, tmp_path = tempfile.mkstemp(
-                dir=str(self._cache_dir), suffix=".json.tmp"
-            )
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                fd = None  # os.fdopen takes ownership
-                json.dump(safe_data, f, indent=2, ensure_ascii=False,
-                          default=_json_serializer)
-            os.replace(tmp_path, str(path))  # atomic on all platforms
-        except OSError as e:
-            logger.warning(f"Failed to write cache: {e}")
-            if tmp_path and os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-        finally:
-            if fd is not None:
-                os.close(fd)
+        with self._cache_lock:  # CRIT-4: Thread-safe write
+            try:
+                fd, tmp_path = tempfile.mkstemp(
+                    dir=str(self._cache_dir), suffix=".json.tmp"
+                )
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    fd = None  # os.fdopen takes ownership
+                    json.dump(safe_data, f, indent=2, ensure_ascii=False,
+                              default=_json_serializer)
+                os.replace(tmp_path, str(path))  # atomic on all platforms
+            except OSError as e:
+                logger.warning(f"Failed to write cache: {e}")
+                if tmp_path and os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+            finally:
+                if fd is not None:
+                    os.close(fd)

@@ -37,11 +37,6 @@ class _GracefulShutdown:
         cls._triggered = False
 
 
-# Register signal handlers
-signal.signal(signal.SIGINT, _GracefulShutdown.trigger)
-signal.signal(signal.SIGTERM, _GracefulShutdown.trigger)
-
-
 class Pipeline:
     """
     Orchestrates the 4-agent QA pipeline.
@@ -80,6 +75,11 @@ class Pipeline:
         self.cost_warning_threshold_usd = cost_warning_threshold_usd
         self._providers_used: set = set()  # HIGH-12: track which providers were used
         self._cost_warning_issued = False
+
+        # CRIT-1: Register signal handlers here (not at module import time)
+        signal.signal(signal.SIGINT, _GracefulShutdown.trigger)
+        if hasattr(signal, 'SIGTERM'):
+            signal.signal(signal.SIGTERM, _GracefulShutdown.trigger)
 
     def run(self, date_from: str, date_to: Optional[str] = None) -> List[Dict]:
         """Full pipeline: RingCentral -> ElevenLabs -> QA -> Export"""
@@ -232,9 +232,15 @@ class Pipeline:
             print("  No evaluations to export.")
             return evaluations
 
+        # HIGH-3/10: Filter out circuit breaker sentinel rows before export
+        exportable = [e for e in evaluations if e.get("status") != "CIRCUIT_BREAKER_TRIGGERED"]
+
         # Step 4: Export results
         print("STEP 4: Exporting results...")
-        files = self.integration_agent.export_all(evaluations, self.qa_agent.EVALUATION_CRITERIA)
+        if not exportable:
+            print("  No valid evaluations to export (all circuit-breaker).")
+            return evaluations
+        files = self.integration_agent.export_all(exportable, self.qa_agent.EVALUATION_CRITERIA)
 
         # Print summary
         self.print_summary(evaluations)

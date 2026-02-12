@@ -45,6 +45,7 @@ class QualityManagementAgent:
         prompts_dir: Optional[str] = None,
         cache_dir: str = "data/cache",
         enable_cache: bool = True,
+        min_transcript_words: int = 20,
     ):
         """
         Args:
@@ -53,6 +54,7 @@ class QualityManagementAgent:
             prompts_dir: Directory with prompt templates (auto-detected if None).
             cache_dir: Directory for LLM response cache.
             enable_cache: Enable response caching.
+            min_transcript_words: Reject transcripts shorter than this (DESIGN-23).
         """
         self.EVALUATION_CRITERIA = load_criteria(criteria_path)
 
@@ -78,6 +80,9 @@ class QualityManagementAgent:
             enable_cache=enable_cache,
         )
 
+        # DESIGN-23: Configurable minimum transcript length
+        self.MIN_TRANSCRIPT_WORDS = min_transcript_words
+
         logger.info(
             f"QualityManagementAgent initialized | "
             f"Criteria: {len(self.EVALUATION_CRITERIA)} | "
@@ -91,9 +96,6 @@ class QualityManagementAgent:
         is_followup = any(indicator in filename_lower for indicator in follow_up_indicators)
         call_type = "Follow-up Call" if is_followup else "First Call"
         return is_followup, call_type
-
-    # Minimum word count to justify an LLM evaluation (CRIT-5)
-    MIN_TRANSCRIPT_WORDS = 20
 
     def evaluate_call(self, transcript: str, filename: str, max_retries: int = 2) -> Dict:
         """Evaluate a call transcript against all applicable criteria.

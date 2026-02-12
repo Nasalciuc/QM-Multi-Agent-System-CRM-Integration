@@ -31,9 +31,10 @@ FILLER_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# Regex for comma-required fillers (only match "like," not "like")
+# Regex for comma-required fillers (only match "like," / "you know," at
+# sentence-interior positions, not when preceded by modal/aux such as "I'd")
 _FILLER_COMMA_PATTERN = re.compile(
-    r"\b(like|you know),\s*",
+    r"(?<!I'd )(?<!I would )(?<!would )(?<!I )\b(like|you know),\s*",
     re.IGNORECASE,
 )
 
@@ -52,14 +53,24 @@ class TranscriptCleaner:
         cleaned = cleaner.clean(raw_transcript)
     """
 
+    _VALID_DIRECTIONS = {"inbound", "outbound"}
+
     def __init__(self, direction: str = "outbound", remove_fillers: bool = True):
         """
         Args:
             direction: "outbound" = first speaker is Agent,
                        "inbound" = first speaker is Client.
             remove_fillers: Strip filler words from transcript.
+
+        Raises:
+            ValueError: If direction is not "inbound" or "outbound".
         """
-        self.direction = direction.lower()
+        direction_lower = direction.lower()
+        if direction_lower not in self._VALID_DIRECTIONS:
+            raise ValueError(
+                f"Invalid direction '{direction}': must be one of {self._VALID_DIRECTIONS}"
+            )
+        self.direction = direction_lower
         self.remove_fillers = remove_fillers
 
     def clean(self, transcript: str) -> str:
