@@ -242,7 +242,8 @@ class TestListeningRatio:
         assert result["client_percentage"] > 0
         assert result["total_words"] > 0
 
-    def test_empty_transcript(self, agent):
+    def test_empty_transcript_listening_ratio(self, agent):
+        """Duplicate-renamed: empty transcript returns 50/50 and 0 words."""
         result = agent.calculate_listening_ratio("")
         assert result["agent_percentage"] == 50.0
         assert result["client_percentage"] == 50.0

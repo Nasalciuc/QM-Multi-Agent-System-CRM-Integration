@@ -11,7 +11,7 @@ Extracted from the inline parsing in agent_03.evaluate_call().
 import json
 import re
 import logging
-from typing import Dict, Set, Optional
+from typing import Dict, List, Set, Optional
 
 logger = logging.getLogger("qa_system.inference")
 
@@ -21,7 +21,7 @@ VALID_SCORES = {"YES", "PARTIAL", "NO", "N/A"}
 class ValidationError(Exception):
     """Raised when LLM response fails validation."""
 
-    def __init__(self, message: str, missing_keys: list = None, invalid_keys: list = None):
+    def __init__(self, message: str, missing_keys: Optional[List[str]] = None, invalid_keys: Optional[List[str]] = None):
         super().__init__(message)
         self.missing_keys = missing_keys or []
         self.invalid_keys = invalid_keys or []

@@ -91,3 +91,8 @@ class BaseLLM(ABC):
     def model_name(self) -> str:
         """Model identifier string (e.g. 'gpt-4o-2024-11-20')."""
         ...
+
+    @property
+    def pricing(self) -> dict:
+        """Pricing dict with input_per_1m and output_per_1m keys."""
+        return getattr(self, '_pricing', {"input_per_1m": 0.0, "output_per_1m": 0.0})

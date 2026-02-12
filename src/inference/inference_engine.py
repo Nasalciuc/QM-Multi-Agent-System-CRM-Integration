@@ -65,9 +65,9 @@ class InferenceEngine:
     ):
         self._factory = model_factory
         self._prompts = prompt_loader or PromptLoader()
-        self._cache_dir = Path(cache_dir) if cache_dir else None
+        self._cache_dir: Optional[Path] = Path(cache_dir) if cache_dir else None
         self._enable_cache = enable_cache and self._cache_dir is not None
-        if self._enable_cache:
+        if self._enable_cache and self._cache_dir is not None:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
 
     # Whitelist of keys safe to persist in cache (CRIT-1: no raw_response, no secrets)

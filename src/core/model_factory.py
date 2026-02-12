@@ -62,8 +62,8 @@ class ModelFactory:
     @property
     def primary_pricing(self) -> dict:
         """Pricing from the primary provider (input_per_1m, output_per_1m)."""
-        if self._primary:
-            return self._primary._pricing
+        if self._primary is not None:
+            return self._primary.pricing
         return {"input_per_1m": 0.0, "output_per_1m": 0.0}
 
     def chat_with_fallback(
@@ -101,7 +101,7 @@ class ModelFactory:
                     max_tokens=max_tokens,
                     json_mode=json_mode,
                 )
-                if provider != self._primary:
+                if provider != self._primary and self._primary is not None:
                     logger.warning(
                         f"Used fallback provider: {provider.provider_name} "
                         f"(primary {self._primary.provider_name} was unavailable)"

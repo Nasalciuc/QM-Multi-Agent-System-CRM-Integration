@@ -17,6 +17,7 @@ try:
     import tiktoken
     _TIKTOKEN_AVAILABLE = True
 except ImportError:
+    tiktoken = None  # type: ignore[assignment]
     _TIKTOKEN_AVAILABLE = False
     logger.info("tiktoken not installed — using word-based token estimates")
 
@@ -43,7 +44,7 @@ class TokenCounter:
         self._pricing = pricing or {"input_per_1m": 2.50, "output_per_1m": 10.00}
         self._encoder = None
 
-        if _TIKTOKEN_AVAILABLE:
+        if _TIKTOKEN_AVAILABLE and tiktoken is not None:
             try:
                 self._encoder = tiktoken.encoding_for_model(model)
             except KeyError:
