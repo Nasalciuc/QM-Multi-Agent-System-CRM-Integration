@@ -274,3 +274,41 @@ class TestPIIRedactor:
         assert "[PHONE]" in result["text"]
         assert "5551234567" not in result["text"]
         assert result["pii_found"]["phone"] >= 1
+
+    def test_redact_dob(self):
+        """#31: Date of birth should be redacted."""
+        redactor = PIIRedactor()
+        result = redactor.redact("My date of birth is 01/15/1990.")
+        assert "[DOB]" in result["text"]
+        assert "01/15/1990" not in result["text"]
+        assert result["pii_found"]["dob"] >= 1
+
+    def test_redact_dob_european_format(self):
+        """#31: European DOB format (DD-MM-YYYY) should also be redacted."""
+        redactor = PIIRedactor()
+        result = redactor.redact("Born on 15-01-1990 in London.")
+        assert "[DOB]" in result["text"]
+        assert "15-01-1990" not in result["text"]
+
+    def test_redact_passport(self):
+        """#31: Passport numbers should be redacted."""
+        redactor = PIIRedactor()
+        result = redactor.redact("My passport is A12345678.")
+        assert "[PASSPORT]" in result["text"]
+        assert "A12345678" not in result["text"]
+        assert result["pii_found"]["passport"] >= 1
+
+    def test_redact_address(self):
+        """#31: Street addresses should be redacted."""
+        redactor = PIIRedactor()
+        result = redactor.redact("I live at 123 Main Street in Springfield.")
+        assert "[ADDRESS]" in result["text"]
+        assert "123 Main Street" not in result["text"]
+        assert result["pii_found"]["address"] >= 1
+
+    def test_redact_address_with_avenue(self):
+        """#31: Address with avenue suffix should be redacted."""
+        redactor = PIIRedactor()
+        result = redactor.redact("Ship to 456 Oak Avenue please.")
+        assert "[ADDRESS]" in result["text"]
+        assert "456 Oak Avenue" not in result["text"]

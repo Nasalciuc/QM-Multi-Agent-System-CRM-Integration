@@ -135,6 +135,25 @@ class TestAtomicWrites:
         corrupt_path.write_text("{invalid json")
         assert engine._load_cache("corrupt") is None
 
+    def test_cache_load_rejects_missing_required_keys(self, engine, tmp_path):
+        """#30: Cache entries missing required keys should be rejected."""
+        cache_dir = tmp_path / "cache"
+        # Valid JSON but missing 'criteria' and 'overall_assessment'
+        incomplete_path = cache_dir / "incomplete.json"
+        incomplete_path.write_text('{"model_used": "gpt-4o"}')
+        assert engine._load_cache("incomplete") is None
+        # File should be deleted
+        assert not incomplete_path.exists()
+
+    def test_cache_load_accepts_valid_entry(self, engine, tmp_path):
+        """#30: Cache entry with required keys should be accepted."""
+        data = {"criteria": {"test": {"score": "YES"}}, "overall_assessment": "Good"}
+        engine._save_cache("valid_key", data)
+        loaded = engine._load_cache("valid_key")
+        assert loaded is not None
+        assert "criteria" in loaded
+        assert "overall_assessment" in loaded
+
 
 # --- Tests: Cache Key (MED-1) ---
 

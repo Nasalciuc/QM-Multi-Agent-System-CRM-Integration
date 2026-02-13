@@ -7,7 +7,7 @@
 # Requires: Python 3.11+, pip, Docker (for container targets)
 # =============================================================================
 
-.PHONY: help install install-dev test lint format docker-build docker-test docker-up docker-down clean
+.PHONY: help install install-dev test lint format docker-build docker-test docker-up docker-down clean lock
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -29,6 +29,9 @@ lint: ## Run ruff linter
 
 format: ## Auto-format with ruff
 	ruff format src/ tests/
+
+lock: ## Generate requirements lockfile (#19)
+	pip freeze --exclude-editable > requirements.lock
 
 # ── Docker ──────────────────────────────────────────────────────
 

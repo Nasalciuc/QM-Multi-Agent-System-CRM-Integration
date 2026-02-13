@@ -140,7 +140,7 @@ class ModelFactory:
 
         # Fallbacks
         for fallback_cfg in self._config.get("fallbacks", []):
-            api_key = os.environ.get(fallback_cfg["api_key_env"], "")
+            api_key = os.environ.get(fallback_cfg["api_key_env"], "").strip()
             if not api_key:
                 logger.info(
                     f"Skipping fallback {fallback_cfg['provider']}: "
@@ -161,9 +161,9 @@ class ModelFactory:
     @staticmethod
     def _create_client(cfg: dict) -> OpenAIClient:
         """Create an OpenAIClient from a provider config dict."""
-        api_key = os.environ.get(cfg["api_key_env"], "")
+        api_key = os.environ.get(cfg["api_key_env"], "").strip()
         if not api_key:
-            raise ValueError(f"Missing env var: {cfg['api_key_env']}")
+            raise ValueError(f"Missing or empty env var: {cfg['api_key_env']}")
 
         return OpenAIClient(
             base_url=cfg["base_url"],

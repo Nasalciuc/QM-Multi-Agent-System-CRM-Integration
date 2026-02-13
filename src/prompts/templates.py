@@ -92,11 +92,21 @@ class _SafeDict(dict):
 
     MED-7: Logs a warning when a referenced variable is missing from the
     provided context, which helps catch prompt template typos.
+    #12: When QA_STRICT_PROMPTS=1, raises KeyError instead of silently
+    substituting, to catch template mistakes in development.
     """
 
     def __missing__(self, key: str) -> str:
         import logging
-        logging.getLogger("qa_system.prompts").warning(
+        import os
+        logger = logging.getLogger("qa_system.prompts")
+        # #12: Strict mode — fail loudly on missing template variables
+        if os.environ.get("QA_STRICT_PROMPTS", "").strip() == "1":
+            raise KeyError(
+                f"Template variable '{{{key}}}' not provided and "
+                f"QA_STRICT_PROMPTS=1 is set"
+            )
+        logger.warning(
             f"Template variable '{{{key}}}' not provided — left as placeholder"
         )
         return "{" + key + "}"

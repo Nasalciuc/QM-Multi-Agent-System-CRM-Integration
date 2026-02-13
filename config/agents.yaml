@@ -22,17 +22,9 @@ elevenlabs:
   tag_audio_events: false       # Tag non-speech events (laughter, music)
   language_code: null            # null = auto-detect language
   keyterms: []                  # Domain-specific terms to boost recognition
+  delay_between_calls: 0.5     # Seconds between consecutive STT API calls (#6)
 
-openrouter:
-  model: "gpt-4o-2024-11-20"  # Primary model (via OpenRouter)
-  # Alternative models:
-  # - "anthropic/claude-sonnet-4-20250514"
-  # - "google/gemini-2.0-flash-001"
-  temperature: 0.1             # Low for consistent scoring
-  max_tokens: 4096
-  pricing:
-    input_per_1m: 2.50
-    output_per_1m: 10.00
+# #10: LLM model config is in config/models.yaml — not duplicated here
 
 integration:
   webhook_url: ""              # Set via WEBHOOK_URL env var

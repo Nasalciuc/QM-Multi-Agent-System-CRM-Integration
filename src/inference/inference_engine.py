@@ -112,8 +112,11 @@ class InferenceEngine:
         "criteria", "overall_assessment", "strengths", "improvements",
         "critical_gaps", "call_type", "model_used", "provider_used",
         "tokens_used", "cost_usd", "eval_time_seconds", "is_followup",
-        "truncated", "pii_redacted",
+        "truncated", "pii_redacted", "prompt_hash",
     })
+
+    # Required keys that must be present when loading from cache (#2)
+    _CACHE_REQUIRED_KEYS = frozenset({"criteria", "overall_assessment"})
 
     def _cleanup_cache(self) -> None:
         """MED-20: Remove cache entries older than TTL at startup."""
@@ -149,7 +152,21 @@ class InferenceEngine:
 
         Returns:
             Evaluation dict with criteria scores, metadata, and cost info.
+
+        Raises:
+            ValueError: If transcript is empty, binary, or exceeds size limit.
         """
+        # #3: Input validation before LLM call
+        if not transcript or not transcript.strip():
+            raise ValueError("Transcript is empty or whitespace-only")
+        if "\x00" in transcript:
+            raise ValueError("Transcript contains binary data (null bytes)")
+        _MAX_TRANSCRIPT_CHARS = 500_000
+        if len(transcript) > _MAX_TRANSCRIPT_CHARS:
+            raise ValueError(
+                f"Transcript too large: {len(transcript)} chars "
+                f"(limit {_MAX_TRANSCRIPT_CHARS})"
+            )
         expected_keys = set(criteria.keys())
         criteria_count = len(criteria)
 
@@ -218,6 +235,8 @@ class InferenceEngine:
                 }
                 evaluation["cost_usd"] = llm_response.cost_usd
                 evaluation["eval_time_seconds"] = llm_response.elapsed_seconds
+                # #26: Prompt template version tracking
+                evaluation["prompt_hash"] = prompt_hash
 
                 # Cache the result — only if it has no error key (HIGH-NEW-7)
                 if self._enable_cache and "error" not in evaluation:
@@ -302,7 +321,13 @@ class InferenceEngine:
                         path.unlink(missing_ok=True)
                         return None
                     with open(path, "r", encoding="utf-8") as f:
-                        return json.load(f)
+                        data = json.load(f)
+                    # #2: Validate cache entry has required keys
+                    if not isinstance(data, dict) or not self._CACHE_REQUIRED_KEYS.issubset(data.keys()):
+                        logger.warning(f"Cache entry invalid (missing required keys): {key[:12]}")
+                        path.unlink(missing_ok=True)
+                        return None
+                    return data
                 except (json.JSONDecodeError, OSError):
                     return None
         return None

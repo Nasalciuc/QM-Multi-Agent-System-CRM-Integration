@@ -73,7 +73,11 @@ class ResponseParser:
         return data
 
     def _extract_json(self, text: str) -> Dict:
-        """Extract JSON from text, handling markdown code blocks."""
+        """Extract JSON from text, handling markdown code blocks.
+
+        #11: Uses json.JSONDecoder().raw_decode() instead of greedy regex
+        to correctly handle nested JSON and avoid over-matching.
+        """
         text = text.strip()
 
         # Try direct JSON parse first
@@ -83,18 +87,27 @@ class ResponseParser:
             pass
 
         # Try extracting from markdown code block
-        patterns = [
+        md_patterns = [
             r"```json\s*(.*?)\s*```",
             r"```\s*(.*?)\s*```",
-            r"\{.*\}",
         ]
-        for pattern in patterns:
+        for pattern in md_patterns:
             match = re.search(pattern, text, re.DOTALL)
             if match:
                 try:
-                    candidate = match.group(1) if match.lastindex else match.group(0)
-                    return json.loads(candidate)
+                    return json.loads(match.group(1))
                 except (json.JSONDecodeError, IndexError):
+                    continue
+
+        # #11: Use raw_decode to find first valid JSON object
+        decoder = json.JSONDecoder()
+        for i, ch in enumerate(text):
+            if ch == '{':
+                try:
+                    obj, _ = decoder.raw_decode(text, i)
+                    if isinstance(obj, dict):
+                        return obj
+                except json.JSONDecodeError:
                     continue
 
         raise ValidationError(f"Could not extract valid JSON from response ({len(text)} chars)")

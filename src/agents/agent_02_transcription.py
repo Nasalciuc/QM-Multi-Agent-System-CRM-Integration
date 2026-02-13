@@ -69,6 +69,7 @@ class ElevenLabsSTTAgent:
         tag_audio_events: bool = False,
         language_code: Optional[str] = None,
         keyterms: Optional[List[str]] = None,
+        delay_between_calls: float = 0.5,
     ):
         """
         Initialize with ElevenLabs client.
@@ -85,6 +86,7 @@ class ElevenLabsSTTAgent:
             tag_audio_events: Tag non-speech events (laughter, music, etc.).
             language_code: ISO language code (None = auto-detect).
             keyterms: Domain-specific terms to boost recognition accuracy.
+            delay_between_calls: Seconds to wait between consecutive API calls (#6).
         """
         self.client = client
         self.persist_transcripts = persist_transcripts
@@ -97,6 +99,7 @@ class ElevenLabsSTTAgent:
         self.tag_audio_events = tag_audio_events
         self.language_code = language_code
         self.keyterms = keyterms or []
+        self.delay_between_calls = delay_between_calls
         if self.persist_transcripts:
             self.transcripts_folder.mkdir(parents=True, exist_ok=True)
         logger.info(
@@ -188,7 +191,18 @@ class ElevenLabsSTTAgent:
                 )):
                     raise
                 if attempt < self.MAX_RETRIES:
-                    wait = self.RETRY_BACKOFF_BASE ** (attempt + 1)
+                    # #13: Respect Retry-After header if available
+                    retry_after = getattr(e, 'retry_after', None)
+                    if retry_after is None and hasattr(e, 'response'):
+                        resp = getattr(e, 'response', None)
+                        if resp is not None and hasattr(resp, 'headers'):
+                            retry_after_str = resp.headers.get('Retry-After')
+                            if retry_after_str:
+                                try:
+                                    retry_after = float(retry_after_str)
+                                except (ValueError, TypeError):
+                                    pass
+                    wait = retry_after if retry_after else self.RETRY_BACKOFF_BASE ** (attempt + 1)
                     logger.warning(
                         f"Transient STT error (attempt {attempt + 1}/{self.MAX_RETRIES + 1}): {e}. "
                         f"Retrying in {wait}s..."
@@ -307,20 +321,22 @@ class ElevenLabsSTTAgent:
     def transcribe_batch(
         self,
         audio_files: List[Path],
-        delay_between_calls: float = 0.5,
+        delay_between_calls: Optional[float] = None,
     ) -> Dict[str, Dict]:
         """Transcribe multiple files, track progress and costs.
 
-        CRIT-NEW-2: Adds configurable delay between API calls to avoid
-        hammering ElevenLabs rate limits.
+        #6: Uses instance delay_between_calls by default, overridable per-call.
 
         Args:
             audio_files: List of audio file paths.
             delay_between_calls: Seconds to wait between consecutive API calls.
+                                 Defaults to self.delay_between_calls.
 
         Returns:
             dict: {filename: {transcript, duration, credits_used, status, ...}}
         """
+        if delay_between_calls is None:
+            delay_between_calls = self.delay_between_calls
         transcripts = {}
         total = len(audio_files)
 

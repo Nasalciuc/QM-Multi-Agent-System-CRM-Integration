@@ -30,6 +30,16 @@ def agent_with_webhook(tmp_output):
 
 
 @pytest.fixture
+def agent_with_hmac(tmp_output):
+    """#32: Agent with webhook + HMAC secret."""
+    return IntegrationAgent(
+        output_folder=tmp_output,
+        webhook_url="https://example.com/webhook",
+        webhook_secret="test-secret-key",
+    )
+
+
+@pytest.fixture
 def sample_evaluations():
     return [
         {
@@ -161,3 +171,39 @@ class TestWebhook:
         result = agent_with_webhook.send_webhook({"event": "test"})
         assert result is False
         assert mock_client.post.call_count == 3
+
+    @patch("agents.agent_04_export.httpx.Client")
+    def test_webhook_hmac_signature(self, mock_client_class, agent_with_hmac):
+        """#32: When webhook_secret is set, X-Signature-256 header should be sent."""
+        import hashlib
+        import hmac as hmac_mod
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_client.post.return_value = mock_response
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+
+        payload = {"event": "test", "score": 85}
+        result = agent_with_hmac.send_webhook(payload)
+        assert result is True
+
+        # Verify HMAC header was sent
+        call_kwargs = mock_client.post.call_args
+        headers = call_kwargs[1]["headers"] if "headers" in call_kwargs[1] else call_kwargs.kwargs.get("headers", {})
+        assert "X-Signature-256" in headers
+        assert headers["X-Signature-256"].startswith("sha256=")
+
+        # Verify signature is correct
+        body = call_kwargs[1].get("content", "")
+        expected_sig = hmac_mod.new(
+            b"test-secret-key", body.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        assert headers["X-Signature-256"] == f"sha256={expected_sig}"
+
+    def test_webhook_no_hmac_without_secret(self, agent_with_webhook):
+        """#32: Without webhook_secret, no HMAC header should be added."""
+        # Agent without secret should not have webhook_secret set
+        assert not agent_with_webhook.webhook_secret

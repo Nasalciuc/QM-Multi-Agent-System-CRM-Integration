@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime, date
 from decimal import Decimal
+import hashlib
+import hmac
 import json
 import os
 import time
@@ -64,18 +66,21 @@ def _json_serializer(obj):
 class IntegrationAgent:
     """Agent: Export results to Excel/CSV/JSON and optional webhook"""
 
-    def __init__(self, output_folder: str = "data/evaluations", webhook_url: str = ""):
+    def __init__(self, output_folder: str = "data/evaluations", webhook_url: str = "",
+                 webhook_secret: str = ""):
         """
         Initialize integration agent.
 
         Usage:
             agent_integration = IntegrationAgent(
                 output_folder="data/evaluations",
-                webhook_url=os.environ.get('WEBHOOK_URL', '')
+                webhook_url=os.environ.get('WEBHOOK_URL', ''),
+                webhook_secret=os.environ.get('WEBHOOK_SECRET', ''),
             )
         """
         self.output_folder = Path(output_folder)
         self.webhook_url = webhook_url
+        self.webhook_secret = webhook_secret
         self.output_folder.mkdir(parents=True, exist_ok=True)
         logger.info(f"IntegrationAgent initialized | Output: {self.output_folder}")
 
@@ -219,6 +224,7 @@ class IntegrationAgent:
     def send_webhook(self, payload: dict) -> bool:
         """POST payload to webhook URL with retry + exponential backoff.
 
+        #8: Adds HMAC-SHA256 signature when webhook_secret is configured.
         HIGH-10: Uses shorter timeouts and caps retry delay.
         MED-NEW-9: Exponential backoff between retries.
         """
@@ -226,10 +232,26 @@ class IntegrationAgent:
             return False
 
         max_attempts = 3
+        body = json.dumps(payload, default=_json_serializer, sort_keys=True)
+
+        headers = {"Content-Type": "application/json"}
+        # #8: HMAC signing for webhook authentication
+        if self.webhook_secret:
+            signature = hmac.new(
+                self.webhook_secret.encode("utf-8"),
+                body.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            headers["X-Signature-256"] = f"sha256={signature}"
+
         for attempt in range(max_attempts):
             try:
                 with httpx.Client(timeout=5) as client:
-                    response = client.post(self.webhook_url, json=payload)
+                    response = client.post(
+                        self.webhook_url,
+                        content=body,
+                        headers=headers,
+                    )
                     if 200 <= response.status_code < 300:
                         logger.info(f"Webhook sent: {response.status_code}")
                         return True

@@ -81,6 +81,24 @@ _SPELLED_PHONE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# #4: Date of birth patterns (MM/DD/YYYY, DD-MM-YYYY, etc.)
+_DOB_PATTERN = re.compile(
+    r"\b(?:0[1-9]|1[0-2])[/\-](?:0[1-9]|[12]\d|3[01])[/\-](?:19|20)\d{2}\b"
+    r"|\b(?:0[1-9]|[12]\d|3[01])[/\-](?:0[1-9]|1[0-2])[/\-](?:19|20)\d{2}\b"
+)
+
+# #4: Passport number (letter followed by 6-9 digits)
+_PASSPORT_PATTERN = re.compile(
+    r"\b[A-Z]\d{6,9}\b"
+)
+
+# #4: Street address (number + street name + suffix)
+_ADDRESS_PATTERN = re.compile(
+    r"\b\d{1,5}\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+"
+    r"(?:Street|St|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Road|Rd|Lane|Ln|Way|Court|Ct|Place|Pl)\b",
+    re.IGNORECASE,
+)
+
 # Replacement tokens
 _REPLACEMENTS = {
     "phone": "[PHONE]",
@@ -88,6 +106,9 @@ _REPLACEMENTS = {
     "credit_card": "[CC_NUMBER]",
     "ssn": "[SSN]",
     "spelled_pii": "[SPELLED_PII]",
+    "dob": "[DOB]",
+    "passport": "[PASSPORT]",
+    "address": "[ADDRESS]",
 }
 
 
@@ -108,12 +129,18 @@ class PIIRedactor:
         redact_credit_cards: bool = True,
         redact_ssn: bool = True,
         redact_spelled_pii: bool = True,
+        redact_dob: bool = True,
+        redact_passport: bool = True,
+        redact_address: bool = True,
     ):
         self.redact_phones = redact_phones
         self.redact_emails = redact_emails
         self.redact_credit_cards = redact_credit_cards
         self.redact_ssn = redact_ssn
         self.redact_spelled_pii = redact_spelled_pii
+        self.redact_dob = redact_dob
+        self.redact_passport = redact_passport
+        self.redact_address = redact_address
 
     def redact(self, text: str) -> Dict:
         """Redact all configured PII types from text.
@@ -130,7 +157,8 @@ class PIIRedactor:
         if not text:
             return {"text": "", "pii_found": {}, "total_redactions": 0}
 
-        counts = {"phone": 0, "email": 0, "credit_card": 0, "ssn": 0, "spelled_pii": 0}
+        counts = {"phone": 0, "email": 0, "credit_card": 0, "ssn": 0,
+                  "spelled_pii": 0, "dob": 0, "passport": 0, "address": 0}
 
         # Order matters: SSN before phone (SSN is more specific)
         if self.redact_ssn:
@@ -140,6 +168,11 @@ class PIIRedactor:
         if self.redact_credit_cards:
             text, n = _CC_PATTERN.subn(_REPLACEMENTS["credit_card"], text)
             counts["credit_card"] = n
+
+        # #4: DOB before phone (date patterns can overlap with phone)
+        if self.redact_dob:
+            text, n = _DOB_PATTERN.subn(_REPLACEMENTS["dob"], text)
+            counts["dob"] = n
 
         if self.redact_emails:
             text, n = _EMAIL_PATTERN.subn(_REPLACEMENTS["email"], text)
@@ -151,6 +184,16 @@ class PIIRedactor:
             # CRIT-5: Also catch unseparated 10-digit numbers
             text, n2 = _PHONE_NOSEP_PATTERN.subn(_REPLACEMENTS["phone"], text)
             counts["phone"] += n2
+
+        # #4: Passport numbers
+        if self.redact_passport:
+            text, n = _PASSPORT_PATTERN.subn(_REPLACEMENTS["passport"], text)
+            counts["passport"] = n
+
+        # #4: Street addresses
+        if self.redact_address:
+            text, n = _ADDRESS_PATTERN.subn(_REPLACEMENTS["address"], text)
+            counts["address"] = n
 
         # CRIT-3: Spelled-out PII (common in call center recordings)
         if self.redact_spelled_pii:

@@ -129,3 +129,47 @@ class TestIntegrationSmokeTest:
 
         assert results == []
         a3.evaluate_call.assert_not_called()
+
+    def test_pipeline_multi_file_flow(self, integration_agents):
+        """#28: Multi-file pipeline processes all files in sequence."""
+        a1, a2, a3, a4 = integration_agents
+        a2.transcribe_batch.return_value = {
+            "call1.mp3": {
+                "transcript": "Agent: Hello\nClient: Hi",
+                "status": "Success",
+                "cost_usd": 0.005,
+                "duration": 2.5,
+            },
+            "call2.mp3": {
+                "transcript": "Agent: Good morning\nClient: Good morning",
+                "status": "Success",
+                "cost_usd": 0.003,
+                "duration": 1.5,
+            },
+        }
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+
+        results = pipeline.run_local([Path("call1.mp3"), Path("call2.mp3")])
+
+        assert len(results) == 2
+        assert a3.evaluate_call.call_count == 2
+        a4.export_all.assert_called_once()
+
+    def test_pipeline_circuit_breaker(self, integration_agents):
+        """#28: Circuit breaker triggers after max consecutive failures."""
+        a1, a2, a3, a4 = integration_agents
+        files = {f"call{i}.mp3": {
+            "transcript": f"Agent: Hello {i}\nClient: Hi",
+            "status": "Success",
+            "cost_usd": 0.001,
+            "duration": 1.0,
+        } for i in range(5)}
+        a2.transcribe_batch.return_value = files
+        a3.evaluate_call.return_value = {"error": "API down", "call_type": "First Call"}
+        pipeline = Pipeline(a1, a2, a3, a4, max_consecutive_failures=3, delay_between_evaluations=0)
+
+        results = pipeline.run_local([Path(f"call{i}.mp3") for i in range(5)])
+
+        # Should stop after 3 failures + circuit breaker entry
+        circuit_breaker_entries = [r for r in results if r.get("status") == "CIRCUIT_BREAKER_TRIGGERED"]
+        assert len(circuit_breaker_entries) == 1

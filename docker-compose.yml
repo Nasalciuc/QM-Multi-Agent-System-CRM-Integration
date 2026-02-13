@@ -21,9 +21,9 @@ services:
           cpus: "2.0"
         reservations:
           memory: 512m
-    # Healthcheck: verify Python can import AND data dirs are writable
+    # #27: Healthcheck verifies Python imports AND data dirs AND config validity
     healthcheck:
-      test: ["CMD", "python", "-c", "from core.base_llm import BaseLLM; from pathlib import Path; assert Path('data/evaluations').is_dir(); print('ok')"]
+      test: ["CMD", "python", "src/main.py", "--check"]
       interval: 30s
       timeout: 10s
       retries: 3

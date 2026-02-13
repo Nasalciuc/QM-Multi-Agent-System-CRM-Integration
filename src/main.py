@@ -32,6 +32,7 @@ def main():
     parser.add_argument('--local', nargs='+', help='Local audio file paths')
     parser.add_argument('--folder', help='Local audio folder path')
     parser.add_argument('--check', action='store_true', help='Health check: validate env, config, exit 0')
+    parser.add_argument('--force', action='store_true', help='Force re-run even if lock file exists (#25)')
     args = parser.parse_args()
 
     # Load environment and config
@@ -56,6 +57,19 @@ def main():
         required.extend(_RC_ENV_KEYS)
     validate_env(required)
 
+    # #25: Idempotency — prevent concurrent/duplicate runs
+    lock_file = Path("data/.pipeline.lock")
+    if lock_file.exists() and not args.force:
+        logger.error("Pipeline lock file exists. Another run may be in progress.")
+        print(f"\nERROR: Lock file exists: {lock_file}")
+        print(f"  If no other run is active, use --force or delete {lock_file}")
+        sys.exit(1)
+    try:
+        lock_file.parent.mkdir(parents=True, exist_ok=True)
+        lock_file.write_text(str(os.getpid()))
+    except OSError as e:
+        logger.warning(f"Could not create lock file: {e}")
+
     # Initialize Agent 2: ElevenLabs STT (Scribe v2 with diarization)
     from elevenlabs import ElevenLabs
     el_config = config.get("elevenlabs", {})
@@ -71,6 +85,7 @@ def main():
         tag_audio_events=el_config.get("tag_audio_events", False),
         language_code=el_config.get("language_code"),
         keyterms=el_config.get("keyterms", []),
+        delay_between_calls=el_config.get("delay_between_calls", 0.5),
     )
 
     # Initialize Agent 3: QualityManagement (with ModelFactory fallback)
@@ -81,7 +96,8 @@ def main():
     integration_config = config.get("integration", {})
     agent_integration = IntegrationAgent(
         output_folder=integration_config.get("output_folder", "data/evaluations"),
-        webhook_url=os.environ.get('WEBHOOK_URL', '')
+        webhook_url=os.environ.get('WEBHOOK_URL', ''),
+        webhook_secret=os.environ.get('WEBHOOK_SECRET', ''),
     )
 
     # Mode: Local files
@@ -122,7 +138,18 @@ def main():
             os.environ['RC_SERVER_URL']
         )
         platform = sdk.platform()
-        platform.login(jwt=os.environ['RC_USER_JWT'])
+        # #5: Handle JWT expiry with clear error message
+        try:
+            platform.login(jwt=os.environ['RC_USER_JWT'])
+        except Exception as e:
+            error_msg = str(e).lower()
+            if any(kw in error_msg for kw in ("jwt", "token", "expired", "unauthorized", "401")):
+                logger.error(f"RingCentral JWT authentication failed: {e}")
+                print(f"\nERROR: RingCentral JWT authentication failed.")
+                print(f"  Your RC_USER_JWT may be expired or invalid.")
+                print(f"  Generate a new JWT at https://developers.ringcentral.com")
+                sys.exit(1)
+            raise
 
         agent_rc = RingCentralAgent(
             platform,
@@ -138,6 +165,12 @@ def main():
         sys.exit(1)
 
     print(f"\nDone! {len(results)} calls evaluated.")
+
+    # #25: Remove lock file on successful completion
+    try:
+        lock_file.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ Flow:
 from typing import List, Dict, Optional
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import shutil
 import signal
 import time
 import logging
@@ -109,6 +110,22 @@ class Pipeline:
             time.sleep(min(granularity, remaining))
             remaining -= granularity
 
+    @staticmethod
+    def _check_disk_space(min_free_mb: int = 500) -> None:
+        """#7: Check available disk space before processing.
+
+        Raises:
+            RuntimeError: If free disk space is below min_free_mb.
+        """
+        usage = shutil.disk_usage(".")
+        free_mb = usage.free / (1024 * 1024)
+        if free_mb < min_free_mb:
+            raise RuntimeError(
+                f"Insufficient disk space: {free_mb:.0f} MB free "
+                f"(minimum {min_free_mb} MB required)"
+            )
+        logger.debug(f"Disk space check: {free_mb:.0f} MB free")
+
     def run(self, date_from: str, date_to: Optional[str] = None) -> List[Dict]:
         """Full pipeline: RingCentral -> ElevenLabs -> QA -> Export"""
         print(f"\n{'='*60}")
@@ -160,6 +177,9 @@ class Pipeline:
 
     def _process_audio_files(self, audio_files: List[Path]) -> List[Dict]:
         """Steps 2-4: Transcribe, evaluate, export."""
+
+        # #7: Check disk space before processing
+        self._check_disk_space()
 
         # Step 2: Transcribe with ElevenLabs
         print("STEP 2: Transcribing with ElevenLabs Scribe v2...")
@@ -222,9 +242,14 @@ class Pipeline:
                     break
                 continue
 
-            # HIGH-NEW-6: Only reset circuit breaker on *genuine* success
-            # — soft failures (validation, too-short) should NOT reset it
-            if evaluation.get("status") != "TOO_SHORT":
+            # HIGH-NEW-6 + #9: Only reset circuit breaker on *genuine* success
+            # — soft failures (validation, too-short) and evaluations with
+            # too few scored criteria should NOT reset it
+            scored_criteria = sum(
+                1 for c in evaluation.get("criteria", {}).values()
+                if isinstance(c, dict) and c.get("score", "").upper() in ("YES", "PARTIAL", "NO")
+            )
+            if evaluation.get("status") != "TOO_SHORT" and scored_criteria > 0:
                 consecutive_failures = 0
             score_data = self.qa_agent.calculate_score(evaluation)
 

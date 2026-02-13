@@ -89,7 +89,25 @@ class TestConfigLoading:
     def test_missing_api_key_raises(self, models_config):
         """Primary provider without env var should raise."""
         with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ValueError, match="Missing env var"):
+            with pytest.raises(ValueError, match="Missing or empty env var"):
+                ModelFactory(config_path=models_config)
+
+    def test_whitespace_only_api_key_raises(self, models_config):
+        """#29: Whitespace-only API key should fail validation."""
+        with patch.dict(os.environ, {"TEST_PRIMARY_KEY": "   "}, clear=True):
+            with pytest.raises(ValueError, match="Missing or empty env var"):
+                ModelFactory(config_path=models_config)
+
+    def test_empty_string_api_key_raises(self, models_config):
+        """#29: Empty string API key should fail validation."""
+        with patch.dict(os.environ, {"TEST_PRIMARY_KEY": ""}, clear=True):
+            with pytest.raises(ValueError, match="Missing or empty env var"):
+                ModelFactory(config_path=models_config)
+
+    def test_tab_newline_api_key_raises(self, models_config):
+        """#29: Tab/newline-only API key should fail validation."""
+        with patch.dict(os.environ, {"TEST_PRIMARY_KEY": "\t\n"}, clear=True):
+            with pytest.raises(ValueError, match="Missing or empty env var"):
                 ModelFactory(config_path=models_config)
 
 

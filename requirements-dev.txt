@@ -8,3 +8,9 @@ pytest-cov>=6.0,<7.0
 
 # --- Linting ---
 ruff>=0.9.0,<1.0
+
+# --- Type checking (#16) ---
+mypy>=1.10,<2.0
+
+# --- Security scanning (#17) ---
+pip-audit>=2.7,<3.0
