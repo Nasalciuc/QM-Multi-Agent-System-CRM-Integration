@@ -2,7 +2,7 @@
 QA System Agents
 
 Provides:
-  - AudioFileFinder, RingCentralAgent (Agent 1)
+  - AudioFileFinder, CRMAgent (Agent 1)
   - ElevenLabsSTTAgent (Agent 2)
   - QualityManagementAgent (Agent 3)
   - IntegrationAgent (Agent 4)
@@ -10,7 +10,7 @@ Provides:
 
 __all__ = [
     "AudioFileFinder",
-    "RingCentralAgent",
+    "CRMAgent",
     "ElevenLabsSTTAgent",
     "QualityManagementAgent",
     "IntegrationAgent",

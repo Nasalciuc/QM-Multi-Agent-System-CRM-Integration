@@ -2,7 +2,7 @@
 Tests for Agent 1: Audio file discovery
 
 Tests AudioFileFinder (local file scanning).
-RingCentralAgent is integration-only (requires live SDK), so not tested here.
+CRMAgent is tested separately in test_agent_01_crm.py.
 """
 import sys
 import os

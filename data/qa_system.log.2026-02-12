@@ -1,0 +1,181 @@
+2026-02-12 13:22:43 [INFO] qa_system.agents [agent_02_transcription.py:57] ElevenLabsSTTAgent initialized | Model: scribe_v1
+2026-02-12 13:22:44 [INFO] qa_system.core [openai_client.py:51] OpenAIClient initialized | provider=openrouter model=gpt-4o-2024-11-20 base_url=https://openrouter.ai/api/v1
+2026-02-12 13:22:44 [INFO] qa_system.core [openai_client.py:51] OpenAIClient initialized | provider=openrouter-claude model=anthropic/claude-sonnet-4-20250514 base_url=https://openrouter.ai/api/v1
+2026-02-12 13:22:44 [INFO] qa_system.core [openai_client.py:51] OpenAIClient initialized | provider=openai-direct model=gpt-4o-2024-11-20 base_url=https://api.openai.com/v1
+2026-02-12 13:22:44 [INFO] qa_system.core [model_factory.py:156] ModelFactory ready | 3 provider(s): ['openrouter', 'openrouter-claude', 'openai-direct']
+2026-02-12 13:22:45 [INFO] qa_system.agents [agent_03_evaluation.py:81] QualityManagementAgent initialized | Criteria: 24 | Provider: openrouter
+2026-02-12 13:22:45 [INFO] qa_system.agents [agent_04_export.py:56] IntegrationAgent initialized | Output: data\evaluations
+2026-02-12 13:22:45 [INFO] qa_system.agents [agent_02_transcription.py:105] Transcribing 1/1: audio
+2026-02-12 13:22:45 [ERROR] qa_system.agents [agent_02_transcription.py:151]   FAIL: audio - [Errno 13] Permission denied: 'data\\audio'
+2026-02-12 13:23:09 [INFO] qa_system.agents [agent_02_transcription.py:57] ElevenLabsSTTAgent initialized | Model: scribe_v1
+2026-02-12 13:23:10 [INFO] qa_system.core [openai_client.py:51] OpenAIClient initialized | provider=openrouter model=gpt-4o-2024-11-20 base_url=https://openrouter.ai/api/v1
+2026-02-12 13:23:10 [INFO] qa_system.core [openai_client.py:51] OpenAIClient initialized | provider=openrouter-claude model=anthropic/claude-sonnet-4-20250514 base_url=https://openrouter.ai/api/v1
+2026-02-12 13:23:11 [INFO] qa_system.core [openai_client.py:51] OpenAIClient initialized | provider=openai-direct model=gpt-4o-2024-11-20 base_url=https://api.openai.com/v1
+2026-02-12 13:23:11 [INFO] qa_system.core [model_factory.py:156] ModelFactory ready | 3 provider(s): ['openrouter', 'openrouter-claude', 'openai-direct']
+2026-02-12 13:23:11 [INFO] qa_system.agents [agent_03_evaluation.py:81] QualityManagementAgent initialized | Criteria: 24 | Provider: openrouter
+2026-02-12 13:23:11 [INFO] qa_system.agents [agent_04_export.py:56] IntegrationAgent initialized | Output: data\evaluations
+2026-02-12 13:23:11 [INFO] qa_system.agents [agent_01_audio.py:37] Found 3 audio files in data\audio
+2026-02-12 13:23:20 [INFO] qa_system.agents [agent_02_transcription.py:105] Transcribing 1/3: Ethan - 126435 second call.mp3
+2026-02-12 13:23:43 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.elevenlabs.io/v1/speech-to-text "HTTP/1.1 200 OK"
+2026-02-12 13:23:43 [INFO] qa_system.agents [agent_02_transcription.py:130]   OK: Ethan - 126435 second call.mp3 (9.2 min, 22.6s)
+2026-02-12 13:23:43 [INFO] qa_system.agents [agent_02_transcription.py:105] Transcribing 2/3: James 2nd call- flight presentation.mp3
+2026-02-12 13:24:26 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.elevenlabs.io/v1/speech-to-text "HTTP/1.1 200 OK"
+2026-02-12 13:24:28 [INFO] qa_system.processing [pii_redactor.py:158] PII redacted: {'phone': 0, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0} (total: 1)
+2026-02-12 13:24:28 [INFO] qa_system.agents [agent_02_transcription.py:86] Transcript saved (PII redacted): data\transcripts\James 2nd call- flight presentation.txt | {'phone': 0, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0}
+2026-02-12 13:24:28 [INFO] qa_system.agents [agent_02_transcription.py:130]   OK: James 2nd call- flight presentation.mp3 (25.1 min, 43.9s)
+2026-02-12 13:24:28 [INFO] qa_system.agents [agent_02_transcription.py:105] Transcribing 3/3: Julia 2nd call ( Just passed the product training).mp3
+2026-02-12 13:25:12 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.elevenlabs.io/v1/speech-to-text "HTTP/1.1 200 OK"
+2026-02-12 13:25:13 [INFO] qa_system.processing [pii_redactor.py:158] PII redacted: {'phone': 1, 'email': 0, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0} (total: 1)
+2026-02-12 13:25:13 [INFO] qa_system.agents [agent_02_transcription.py:86] Transcript saved (PII redacted): data\transcripts\Julia 2nd call ( Just passed the product training).txt | {'phone': 1, 'email': 0, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0}
+2026-02-12 13:25:13 [INFO] qa_system.agents [agent_02_transcription.py:130]   OK: Julia 2nd call ( Just passed the product training).mp3 (51.8 min, 44.3s)
+2026-02-12 13:25:13 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter (gpt-4o-2024-11-20)
+2026-02-12 13:25:15 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 402 Payment Required"
+2026-02-12 13:25:15 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter failed: Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 4096 tokens, but can only afford 3606. To increase, visit https://openrouter.ai/settings/keys and create a key with a higher total limit', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:25:15 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter-claude (anthropic/claude-sonnet-4-20250514)
+2026-02-12 13:25:15 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 400 Bad Request"
+2026-02-12 13:25:15 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter-claude failed: Error code: 400 - {'error': {'message': 'anthropic/claude-sonnet-4-20250514 is not a valid model ID', 'code': 400}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:25:15 [INFO] qa_system.core [model_factory.py:96] Trying provider: openai-direct (gpt-4o-2024-11-20)
+2026-02-12 13:25:23 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-02-12 13:25:23 [DEBUG] qa_system.core [openai_client.py:95] LLM call | provider=openai-direct model=gpt-4o-2024-11-20 in=3347 out=1055 cost=$0.0189 elapsed=8.0s
+2026-02-12 13:25:23 [WARNING] qa_system.core [model_factory.py:105] Used fallback provider: openai-direct (primary openrouter was unavailable)
+2026-02-12 13:25:23 [INFO] qa_system.inference [inference_engine.py:172] Evaluation complete | Follow-up Call | 22 criteria | provider=openai-direct | $0.0189 | 8.0s
+2026-02-12 13:25:24 [INFO] qa_system.processing [pii_redactor.py:158] PII redacted: {'phone': 0, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0} (total: 1)
+2026-02-12 13:25:24 [INFO] qa_system.agents [agent_03_evaluation.py:128] PII redacted in James 2nd call- flight presentation.mp3: {'phone': 0, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0}
+2026-02-12 13:25:24 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter (gpt-4o-2024-11-20)
+2026-02-12 13:25:24 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 402 Payment Required"
+2026-02-12 13:25:24 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter failed: Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 4096 tokens, but can only afford 3606. To increase, visit https://openrouter.ai/settings/keys and create a key with a higher total limit', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:25:24 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter-claude (anthropic/claude-sonnet-4-20250514)
+2026-02-12 13:25:24 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 400 Bad Request"
+2026-02-12 13:25:24 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter-claude failed: Error code: 400 - {'error': {'message': 'anthropic/claude-sonnet-4-20250514 is not a valid model ID', 'code': 400}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:25:24 [INFO] qa_system.core [model_factory.py:96] Trying provider: openai-direct (gpt-4o-2024-11-20)
+2026-02-12 13:25:33 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-02-12 13:25:33 [DEBUG] qa_system.core [openai_client.py:95] LLM call | provider=openai-direct model=gpt-4o-2024-11-20 in=6860 out=1144 cost=$0.0286 elapsed=9.0s
+2026-02-12 13:25:33 [WARNING] qa_system.core [model_factory.py:105] Used fallback provider: openai-direct (primary openrouter was unavailable)
+2026-02-12 13:25:33 [INFO] qa_system.inference [inference_engine.py:172] Evaluation complete | Follow-up Call | 22 criteria | provider=openai-direct | $0.0286 | 9.0s
+2026-02-12 13:25:34 [INFO] qa_system.processing [pii_redactor.py:158] PII redacted: {'phone': 1, 'email': 0, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0} (total: 1)
+2026-02-12 13:25:34 [INFO] qa_system.agents [agent_03_evaluation.py:128] PII redacted in Julia 2nd call ( Just passed the product training).mp3: {'phone': 1, 'email': 0, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0}
+2026-02-12 13:25:34 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter (gpt-4o-2024-11-20)
+2026-02-12 13:25:35 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 402 Payment Required"
+2026-02-12 13:25:35 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter failed: Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 4096 tokens, but can only afford 3606. To increase, visit https://openrouter.ai/settings/keys and create a key with a higher total limit', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:25:35 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter-claude (anthropic/claude-sonnet-4-20250514)
+2026-02-12 13:25:35 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 400 Bad Request"
+2026-02-12 13:25:35 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter-claude failed: Error code: 400 - {'error': {'message': 'anthropic/claude-sonnet-4-20250514 is not a valid model ID', 'code': 400}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:25:35 [INFO] qa_system.core [model_factory.py:96] Trying provider: openai-direct (gpt-4o-2024-11-20)
+2026-02-12 13:25:56 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-02-12 13:25:56 [DEBUG] qa_system.core [openai_client.py:95] LLM call | provider=openai-direct model=gpt-4o-2024-11-20 in=8909 out=1000 cost=$0.0323 elapsed=21.4s
+2026-02-12 13:25:56 [WARNING] qa_system.core [model_factory.py:105] Used fallback provider: openai-direct (primary openrouter was unavailable)
+2026-02-12 13:25:56 [INFO] qa_system.inference [inference_engine.py:172] Evaluation complete | Follow-up Call | 22 criteria | provider=openai-direct | $0.0323 | 21.4s
+2026-02-12 13:25:57 [INFO] qa_system.agents [agent_04_export.py:127] Excel: data\evaluations\QM_20260212_132556.xlsx
+2026-02-12 13:25:57 [INFO] qa_system.agents [agent_04_export.py:136] CSV: data\evaluations\QM_20260212_132556_summary.csv, data\evaluations\QM_20260212_132556_details.csv
+2026-02-12 13:25:57 [INFO] qa_system.agents [agent_04_export.py:185] JSON: data\evaluations\QM_20260212_132556.json
+2026-02-12 13:45:14 [INFO] qa_system.agents [agent_02_transcription.py:57] ElevenLabsSTTAgent initialized | Model: scribe_v1
+2026-02-12 13:45:14 [INFO] qa_system.core [openai_client.py:51] OpenAIClient initialized | provider=openrouter model=gpt-4o-2024-11-20 base_url=https://openrouter.ai/api/v1
+2026-02-12 13:45:15 [INFO] qa_system.core [openai_client.py:51] OpenAIClient initialized | provider=openrouter-claude model=anthropic/claude-sonnet-4-20250514 base_url=https://openrouter.ai/api/v1
+2026-02-12 13:45:15 [INFO] qa_system.core [openai_client.py:51] OpenAIClient initialized | provider=openai-direct model=gpt-4o-2024-11-20 base_url=https://api.openai.com/v1
+2026-02-12 13:45:15 [INFO] qa_system.core [model_factory.py:156] ModelFactory ready | 3 provider(s): ['openrouter', 'openrouter-claude', 'openai-direct']
+2026-02-12 13:45:15 [INFO] qa_system.agents [agent_03_evaluation.py:81] QualityManagementAgent initialized | Criteria: 24 | Provider: openrouter
+2026-02-12 13:45:15 [INFO] qa_system.agents [agent_04_export.py:56] IntegrationAgent initialized | Output: data\evaluations
+2026-02-12 13:45:15 [INFO] qa_system.agents [agent_01_audio.py:37] Found 6 audio files in data\audio
+2026-02-12 13:45:22 [INFO] qa_system.agents [agent_02_transcription.py:105] Transcribing 1/6: Alex - 108582 -first call.mp3
+2026-02-12 13:45:49 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.elevenlabs.io/v1/speech-to-text "HTTP/1.1 200 OK"
+2026-02-12 13:45:50 [INFO] qa_system.agents [agent_02_transcription.py:130]   OK: Alex - 108582 -first call.mp3 (15.0 min, 27.2s)
+2026-02-12 13:45:50 [INFO] qa_system.agents [agent_02_transcription.py:105] Transcribing 2/6: Ethan - 126435 - 1st call new agent trained from 0.mp3
+2026-02-12 13:46:18 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.elevenlabs.io/v1/speech-to-text "HTTP/1.1 200 OK"
+2026-02-12 13:46:18 [INFO] qa_system.processing [pii_redactor.py:158] PII redacted: {'phone': 1, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0} (total: 2)
+2026-02-12 13:46:18 [INFO] qa_system.agents [agent_02_transcription.py:86] Transcript saved (PII redacted): data\transcripts\Ethan - 126435 - 1st call new agent trained from 0.txt | {'phone': 1, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0}
+2026-02-12 13:46:18 [INFO] qa_system.agents [agent_02_transcription.py:130]   OK: Ethan - 126435 - 1st call new agent trained from 0.mp3 (10.4 min, 28.4s)
+2026-02-12 13:46:18 [INFO] qa_system.agents [agent_02_transcription.py:105] Transcribing 3/6: James 1st call 2.mp3
+2026-02-12 13:46:41 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.elevenlabs.io/v1/speech-to-text "HTTP/1.1 200 OK"
+2026-02-12 13:46:41 [INFO] qa_system.processing [pii_redactor.py:158] PII redacted: {'phone': 0, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0} (total: 1)
+2026-02-12 13:46:41 [INFO] qa_system.agents [agent_02_transcription.py:86] Transcript saved (PII redacted): data\transcripts\James 1st call 2.txt | {'phone': 0, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0}
+2026-02-12 13:46:41 [INFO] qa_system.agents [agent_02_transcription.py:130]   OK: James 1st call 2.mp3 (8.1 min, 22.6s)
+2026-02-12 13:46:41 [INFO] qa_system.agents [agent_02_transcription.py:105] Transcribing 4/6: James 1st call.mp3
+2026-02-12 13:47:13 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.elevenlabs.io/v1/speech-to-text "HTTP/1.1 200 OK"
+2026-02-12 13:47:14 [INFO] qa_system.processing [pii_redactor.py:158] PII redacted: {'phone': 0, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0} (total: 1)
+2026-02-12 13:47:14 [INFO] qa_system.agents [agent_02_transcription.py:86] Transcript saved (PII redacted): data\transcripts\James 1st call.txt | {'phone': 0, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0}
+2026-02-12 13:47:14 [INFO] qa_system.agents [agent_02_transcription.py:130]   OK: James 1st call.mp3 (13.4 min, 32.2s)
+2026-02-12 13:47:14 [INFO] qa_system.agents [agent_02_transcription.py:105] Transcribing 5/6: Kate - 132117 - nice first call ( BQ Lead).mp3
+2026-02-12 13:47:38 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.elevenlabs.io/v1/speech-to-text "HTTP/1.1 200 OK"
+2026-02-12 13:47:38 [INFO] qa_system.agents [agent_02_transcription.py:130]   OK: Kate - 132117 - nice first call ( BQ Lead).mp3 (6.7 min, 23.7s)
+2026-02-12 13:47:38 [INFO] qa_system.agents [agent_02_transcription.py:105] Transcribing 6/6: Robert 1st call.mp3
+2026-02-12 13:47:55 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.elevenlabs.io/v1/speech-to-text "HTTP/1.1 200 OK"
+2026-02-12 13:47:55 [INFO] qa_system.processing [pii_redactor.py:158] PII redacted: {'phone': 0, 'email': 3, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0} (total: 3)
+2026-02-12 13:47:55 [INFO] qa_system.agents [agent_02_transcription.py:86] Transcript saved (PII redacted): data\transcripts\Robert 1st call.txt | {'phone': 0, 'email': 3, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0}
+2026-02-12 13:47:55 [INFO] qa_system.agents [agent_02_transcription.py:130]   OK: Robert 1st call.mp3 (10.7 min, 17.0s)
+2026-02-12 13:47:55 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter (gpt-4o-2024-11-20)
+2026-02-12 13:47:56 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 402 Payment Required"
+2026-02-12 13:47:56 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter failed: Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 4096 tokens, but can only afford 3606. To increase, visit https://openrouter.ai/settings/keys and create a key with a higher total limit', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:47:56 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter-claude (anthropic/claude-sonnet-4-20250514)
+2026-02-12 13:47:56 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 400 Bad Request"
+2026-02-12 13:47:56 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter-claude failed: Error code: 400 - {'error': {'message': 'anthropic/claude-sonnet-4-20250514 is not a valid model ID', 'code': 400}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:47:56 [INFO] qa_system.core [model_factory.py:96] Trying provider: openai-direct (gpt-4o-2024-11-20)
+2026-02-12 13:48:05 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-02-12 13:48:05 [DEBUG] qa_system.core [openai_client.py:95] LLM call | provider=openai-direct model=gpt-4o-2024-11-20 in=4274 out=1082 cost=$0.0215 elapsed=8.2s
+2026-02-12 13:48:05 [WARNING] qa_system.core [model_factory.py:105] Used fallback provider: openai-direct (primary openrouter was unavailable)
+2026-02-12 13:48:05 [INFO] qa_system.inference [inference_engine.py:172] Evaluation complete | First Call | 24 criteria | provider=openai-direct | $0.0215 | 8.2s
+2026-02-12 13:48:06 [INFO] qa_system.processing [pii_redactor.py:158] PII redacted: {'phone': 1, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0} (total: 2)
+2026-02-12 13:48:06 [INFO] qa_system.agents [agent_03_evaluation.py:128] PII redacted in Ethan - 126435 - 1st call new agent trained from 0.mp3: {'phone': 1, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0}
+2026-02-12 13:48:06 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter (gpt-4o-2024-11-20)
+2026-02-12 13:48:06 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 402 Payment Required"
+2026-02-12 13:48:06 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter failed: Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 4096 tokens, but can only afford 3606. To increase, visit https://openrouter.ai/settings/keys and create a key with a higher total limit', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:48:06 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter-claude (anthropic/claude-sonnet-4-20250514)
+2026-02-12 13:48:06 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 400 Bad Request"
+2026-02-12 13:48:06 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter-claude failed: Error code: 400 - {'error': {'message': 'anthropic/claude-sonnet-4-20250514 is not a valid model ID', 'code': 400}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:48:06 [INFO] qa_system.core [model_factory.py:96] Trying provider: openai-direct (gpt-4o-2024-11-20)
+2026-02-12 13:48:13 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-02-12 13:48:13 [DEBUG] qa_system.core [openai_client.py:95] LLM call | provider=openai-direct model=gpt-4o-2024-11-20 in=3688 out=980 cost=$0.0190 elapsed=6.8s
+2026-02-12 13:48:13 [WARNING] qa_system.core [model_factory.py:105] Used fallback provider: openai-direct (primary openrouter was unavailable)
+2026-02-12 13:48:13 [INFO] qa_system.inference [inference_engine.py:172] Evaluation complete | First Call | 24 criteria | provider=openai-direct | $0.0190 | 6.8s
+2026-02-12 13:48:14 [INFO] qa_system.processing [pii_redactor.py:158] PII redacted: {'phone': 0, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0} (total: 1)
+2026-02-12 13:48:14 [INFO] qa_system.agents [agent_03_evaluation.py:128] PII redacted in James 1st call 2.mp3: {'phone': 0, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0}
+2026-02-12 13:48:14 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter (gpt-4o-2024-11-20)
+2026-02-12 13:48:14 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 402 Payment Required"
+2026-02-12 13:48:14 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter failed: Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 4096 tokens, but can only afford 3606. To increase, visit https://openrouter.ai/settings/keys and create a key with a higher total limit', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:48:14 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter-claude (anthropic/claude-sonnet-4-20250514)
+2026-02-12 13:48:14 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 400 Bad Request"
+2026-02-12 13:48:14 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter-claude failed: Error code: 400 - {'error': {'message': 'anthropic/claude-sonnet-4-20250514 is not a valid model ID', 'code': 400}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:48:14 [INFO] qa_system.core [model_factory.py:96] Trying provider: openai-direct (gpt-4o-2024-11-20)
+2026-02-12 13:48:21 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-02-12 13:48:21 [DEBUG] qa_system.core [openai_client.py:95] LLM call | provider=openai-direct model=gpt-4o-2024-11-20 in=3103 out=1034 cost=$0.0181 elapsed=6.7s
+2026-02-12 13:48:21 [WARNING] qa_system.core [model_factory.py:105] Used fallback provider: openai-direct (primary openrouter was unavailable)
+2026-02-12 13:48:21 [INFO] qa_system.inference [inference_engine.py:172] Evaluation complete | First Call | 24 criteria | provider=openai-direct | $0.0181 | 6.7s
+2026-02-12 13:48:22 [INFO] qa_system.processing [pii_redactor.py:158] PII redacted: {'phone': 0, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0} (total: 1)
+2026-02-12 13:48:22 [INFO] qa_system.agents [agent_03_evaluation.py:128] PII redacted in James 1st call.mp3: {'phone': 0, 'email': 1, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0}
+2026-02-12 13:48:22 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter (gpt-4o-2024-11-20)
+2026-02-12 13:48:22 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 402 Payment Required"
+2026-02-12 13:48:22 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter failed: Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 4096 tokens, but can only afford 3606. To increase, visit https://openrouter.ai/settings/keys and create a key with a higher total limit', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:48:22 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter-claude (anthropic/claude-sonnet-4-20250514)
+2026-02-12 13:48:22 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 400 Bad Request"
+2026-02-12 13:48:22 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter-claude failed: Error code: 400 - {'error': {'message': 'anthropic/claude-sonnet-4-20250514 is not a valid model ID', 'code': 400}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:48:22 [INFO] qa_system.core [model_factory.py:96] Trying provider: openai-direct (gpt-4o-2024-11-20)
+2026-02-12 13:48:29 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-02-12 13:48:29 [DEBUG] qa_system.core [openai_client.py:95] LLM call | provider=openai-direct model=gpt-4o-2024-11-20 in=4671 out=1021 cost=$0.0219 elapsed=7.6s
+2026-02-12 13:48:29 [WARNING] qa_system.core [model_factory.py:105] Used fallback provider: openai-direct (primary openrouter was unavailable)
+2026-02-12 13:48:30 [INFO] qa_system.inference [inference_engine.py:172] Evaluation complete | First Call | 24 criteria | provider=openai-direct | $0.0219 | 7.6s
+2026-02-12 13:48:31 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter (gpt-4o-2024-11-20)
+2026-02-12 13:48:31 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 402 Payment Required"
+2026-02-12 13:48:31 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter failed: Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 4096 tokens, but can only afford 3606. To increase, visit https://openrouter.ai/settings/keys and create a key with a higher total limit', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:48:31 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter-claude (anthropic/claude-sonnet-4-20250514)
+2026-02-12 13:48:31 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 400 Bad Request"
+2026-02-12 13:48:31 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter-claude failed: Error code: 400 - {'error': {'message': 'anthropic/claude-sonnet-4-20250514 is not a valid model ID', 'code': 400}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:48:31 [INFO] qa_system.core [model_factory.py:96] Trying provider: openai-direct (gpt-4o-2024-11-20)
+2026-02-12 13:48:39 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-02-12 13:48:39 [DEBUG] qa_system.core [openai_client.py:95] LLM call | provider=openai-direct model=gpt-4o-2024-11-20 in=2833 out=972 cost=$0.0168 elapsed=7.9s
+2026-02-12 13:48:39 [WARNING] qa_system.core [model_factory.py:105] Used fallback provider: openai-direct (primary openrouter was unavailable)
+2026-02-12 13:48:39 [INFO] qa_system.inference [inference_engine.py:172] Evaluation complete | First Call | 24 criteria | provider=openai-direct | $0.0168 | 7.9s
+2026-02-12 13:48:40 [INFO] qa_system.processing [pii_redactor.py:158] PII redacted: {'phone': 0, 'email': 3, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0} (total: 3)
+2026-02-12 13:48:40 [INFO] qa_system.agents [agent_03_evaluation.py:128] PII redacted in Robert 1st call.mp3: {'phone': 0, 'email': 3, 'credit_card': 0, 'ssn': 0, 'spelled_pii': 0}
+2026-02-12 13:48:40 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter (gpt-4o-2024-11-20)
+2026-02-12 13:48:40 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 402 Payment Required"
+2026-02-12 13:48:40 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter failed: Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 4096 tokens, but can only afford 3606. To increase, visit https://openrouter.ai/settings/keys and create a key with a higher total limit', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:48:40 [INFO] qa_system.core [model_factory.py:96] Trying provider: openrouter-claude (anthropic/claude-sonnet-4-20250514)
+2026-02-12 13:48:40 [INFO] httpx [_client.py:1025] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 400 Bad Request"
+2026-02-12 13:48:40 [WARNING] qa_system.core [model_factory.py:112] Provider openrouter-claude failed: Error code: 400 - {'error': {'message': 'anthropic/claude-sonnet-4-20250514 is not a valid model ID', 'code': 400}, 'user_id': 'user_30JhBN0OCOt9aZLUYxH3Pwj4iFV'}
+2026-02-12 13:48:40 [INFO] qa_system.core [model_factory.py:96] Trying provider: openai-direct (gpt-4o-2024-11-20)
+2026-02-12 13:48:48 [INFO] httpx [_client.py:1025] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-02-12 13:48:48 [DEBUG] qa_system.core [openai_client.py:95] LLM call | provider=openai-direct model=gpt-4o-2024-11-20 in=3198 out=1074 cost=$0.0187 elapsed=8.4s
+2026-02-12 13:48:48 [WARNING] qa_system.core [model_factory.py:105] Used fallback provider: openai-direct (primary openrouter was unavailable)
+2026-02-12 13:48:48 [INFO] qa_system.inference [inference_engine.py:172] Evaluation complete | First Call | 24 criteria | provider=openai-direct | $0.0187 | 8.4s
+2026-02-12 13:48:49 [INFO] qa_system.agents [agent_04_export.py:127] Excel: data\evaluations\QM_20260212_134848.xlsx
+2026-02-12 13:48:49 [INFO] qa_system.agents [agent_04_export.py:136] CSV: data\evaluations\QM_20260212_134848_summary.csv, data\evaluations\QM_20260212_134848_details.csv
+2026-02-12 13:48:49 [INFO] qa_system.agents [agent_04_export.py:185] JSON: data\evaluations\QM_20260212_134848.json

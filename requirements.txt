@@ -2,8 +2,7 @@
 # Python 3.11+ required
 # Dev/test dependencies are in requirements-dev.txt
 
-# --- Agent 1: RingCentral Audio Retrieval ---
-ringcentral>=0.9.2,<1.0
+# --- Agent 1: Audio Retrieval (CRM API via httpx) ---
 
 # --- Agent 2: ElevenLabs Speech-to-Text ---
 elevenlabs>=2.35.0,<3.0

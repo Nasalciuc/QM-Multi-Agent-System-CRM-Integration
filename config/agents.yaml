@@ -2,13 +2,12 @@
 # Agent Configuration - All 4 agents in one file
 # =============================================================================
 
-ringcentral:
+# CRM API settings (audio source)
+crm:
+  base_url: "https://crm.buybusinessclass.com/ai"
   download_folder: "data/audio"
-  delay_seconds: 1.5           # Rate limit between API calls
-  days_back: 7                 # Default: process last 7 days
-  per_page: 100                # Results per API page (max 250)
-  call_type: "Voice"
-  with_recording: true
+  delay_seconds: 1.5
+  default_limit: 200
 
 elevenlabs:
   model: "scribe_v2"           # ElevenLabs Scribe v2 (with diarization)

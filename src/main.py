@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from utils import setup_logging, load_config, load_env, validate_env, validate_models_config
-from agents.agent_01_audio import AudioFileFinder, RingCentralAgent
+from agents.agent_01_audio import AudioFileFinder, CRMAgent
 from agents.agent_02_transcription import ElevenLabsSTTAgent
 from agents.agent_03_evaluation import QualityManagementAgent
 from agents.agent_04_export import IntegrationAgent
@@ -22,7 +22,7 @@ from pipeline import Pipeline
 
 # Required env vars per mode
 _BASE_ENV_KEYS = ['ELEVENLABS_API_KEY', 'OPENROUTER_API_KEY']
-_RC_ENV_KEYS = ['RC_APP_CLIENT_ID', 'RC_APP_CLIENT_SECRET', 'RC_SERVER_URL', 'RC_USER_JWT']
+_CRM_ENV_KEYS = ['CRM_AI_TOKEN']
 
 
 def main():
@@ -31,6 +31,7 @@ def main():
     parser.add_argument('--date-to', help='End date (YYYY-MM-DD)')
     parser.add_argument('--local', nargs='+', help='Local audio file paths')
     parser.add_argument('--folder', help='Local audio folder path')
+    parser.add_argument('--agent-id', type=int, help='Filter by agent ID (CRM mode)')
     parser.add_argument('--check', action='store_true', help='Health check: validate env, config, exit 0')
     parser.add_argument('--force', action='store_true', help='Force re-run even if lock file exists (#25)')
     args = parser.parse_args()
@@ -43,6 +44,15 @@ def main():
     # MED-19: Health check mode — validate environment and exit
     if args.check:
         models_config = validate_models_config()
+        # CRM connectivity check
+        if os.environ.get('CRM_AI_TOKEN'):
+            try:
+                test_agent = CRMAgent(api_token=os.environ['CRM_AI_TOKEN'])
+                test_agent.search_recordings(date_from="2026-01-01", date_to="2026-01-01")
+                test_agent.close()
+                logger.info("CRM API connectivity: OK")
+            except Exception as e:
+                logger.warning(f"CRM API connectivity check failed: {e}")
         logger.info("Health check passed")
         print("OK — config valid, env loaded")
         sys.exit(0)
@@ -54,7 +64,7 @@ def main():
     # Validate required env vars upfront
     required = list(_BASE_ENV_KEYS)
     if args.date_from:
-        required.extend(_RC_ENV_KEYS)
+        required.extend(_CRM_ENV_KEYS)
     validate_env(required)
 
     # #25: Idempotency — prevent concurrent/duplicate runs
@@ -127,37 +137,18 @@ def main():
         pipeline = Pipeline(agent_finder, agent_stt, agent_qm, agent_integration)
         results = pipeline.run_local(audio_files)
 
-    # Mode: RingCentral API
+    # Mode: CRM API
     elif args.date_from:
-        from ringcentral import SDK
-        rc_config = config.get("ringcentral", {})
-
-        sdk = SDK(
-            os.environ['RC_APP_CLIENT_ID'],
-            os.environ['RC_APP_CLIENT_SECRET'],
-            os.environ['RC_SERVER_URL']
-        )
-        platform = sdk.platform()
-        # #5: Handle JWT expiry with clear error message
-        try:
-            platform.login(jwt=os.environ['RC_USER_JWT'])
-        except Exception as e:
-            error_msg = str(e).lower()
-            if any(kw in error_msg for kw in ("jwt", "token", "expired", "unauthorized", "401")):
-                logger.error(f"RingCentral JWT authentication failed: {e}")
-                print(f"\nERROR: RingCentral JWT authentication failed.")
-                print(f"  Your RC_USER_JWT may be expired or invalid.")
-                print(f"  Generate a new JWT at https://developers.ringcentral.com")
-                sys.exit(1)
-            raise
-
-        agent_rc = RingCentralAgent(
-            platform,
-            download_folder=rc_config.get("download_folder", "data/audio"),
-            delay_seconds=rc_config.get("delay_seconds", 1.5)
+        crm_config = config.get("crm", {})
+        agent_audio = CRMAgent(
+            api_token=os.environ['CRM_AI_TOKEN'],
+            base_url=crm_config.get("base_url", CRMAgent.BASE_URL),
+            download_folder=crm_config.get("download_folder", "data/audio"),
+            delay_seconds=crm_config.get("delay_seconds", 1.5),
+            agent_id=args.agent_id,
         )
 
-        pipeline = Pipeline(agent_rc, agent_stt, agent_qm, agent_integration)
+        pipeline = Pipeline(agent_audio, agent_stt, agent_qm, agent_integration)
         results = pipeline.run(args.date_from, args.date_to)
 
     else:

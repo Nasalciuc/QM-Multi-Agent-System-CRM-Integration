@@ -68,11 +68,8 @@ OPENROUTER_API_KEY=your_openrouter_key
 OPENAI_API_KEY=your_openai_key
 ANTHROPIC_API_KEY=your_anthropic_key
 
-# RingCentral (only needed for --date-from mode)
-RC_APP_CLIENT_ID=
-RC_APP_CLIENT_SECRET=
-RC_SERVER_URL=https://platform.ringcentral.com
-RC_USER_JWT=
+# CRM API (needed for --date-from mode)
+CRM_AI_TOKEN=your_crm_token
 
 # Optional
 WEBHOOK_URL=
@@ -124,10 +121,10 @@ python src/main.py --folder data/audio
 python src/main.py --local data/audio/call1.mp3 data/audio/call2.mp3
 ```
 
-### RingCentral API
+### CRM API
 
 ```bash
-python src/main.py --date-from 2025-02-01 --date-to 2025-02-11
+python src/main.py --date-from 2026-02-01 --date-to 2026-02-10
 ```
 
 ### Docker

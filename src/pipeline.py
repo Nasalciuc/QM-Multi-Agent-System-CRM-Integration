@@ -4,7 +4,7 @@ Pipeline Orchestrator
 Purpose: Run Agent 1 -> 2 -> 3 -> 4 in sequence
 
 Flow:
-    Agent 1 (RingCentral/Local) -> List of audio file paths
+    Agent 1 (CRM/Local)        -> List of audio file paths
     Agent 2 (ElevenLabs)        -> Dict of {filename: {transcript, duration, ...}}
     Agent 3 (QualityMgmt)       -> List of evaluation dicts
     Agent 4 (Integration)       -> Excel/CSV/JSON files
@@ -48,8 +48,8 @@ class Pipeline:
     """
     Orchestrates the 4-agent QA pipeline.
 
-    Usage (from RingCentral):
-        pipeline = Pipeline(agent_rc, agent_stt, agent_qm, agent_integration)
+    Usage (from CRM API):
+        pipeline = Pipeline(agent_crm, agent_stt, agent_qm, agent_integration)
         results = pipeline.run(date_from="2025-02-01", date_to="2025-02-11")
 
     Usage (from local files):
@@ -65,7 +65,7 @@ class Pipeline:
         """Store all 4 agents and initialize tracking.
 
         Args:
-            agent_01: RingCentralAgent or AudioFileFinder
+            agent_01: CRMAgent or AudioFileFinder
             agent_02: ElevenLabsSTTAgent
             agent_03: QualityManagementAgent
             agent_04: IntegrationAgent
@@ -127,17 +127,18 @@ class Pipeline:
         logger.debug(f"Disk space check: {free_mb:.0f} MB free")
 
     def run(self, date_from: str, date_to: Optional[str] = None) -> List[Dict]:
-        """Full pipeline: RingCentral -> ElevenLabs -> QA -> Export"""
+        """Full pipeline: Audio source -> ElevenLabs -> QA -> Export"""
+
         print(f"\n{'='*60}")
-        print(f"  QA Pipeline: RingCentral Mode")
+        print(f"  QA Pipeline: CRM Mode")
         print(f"  Period: {date_from} to {date_to or 'now'}")
         print(f"{'='*60}\n")
 
         pipeline_start = time.time()
         _GracefulShutdown.reset()  # MED-NEW-15: Clear stale shutdown state
 
-        # Step 1: Download recordings from RingCentral
-        print("STEP 1: Downloading recordings from RingCentral...")
+        # Step 1: Download recordings
+        print(f"STEP 1: Downloading recordings from CRM...")
         calls = self.audio_agent.search_and_download(date_from, date_to)
         audio_files = [Path(c["local_audio_path"]) for c in calls if c.get("local_audio_path")]
         print(f"  -> {len(audio_files)} audio files ready\n")
@@ -155,7 +156,7 @@ class Pipeline:
         return evaluations
 
     def run_local(self, audio_files: List[Path]) -> List[Dict]:
-        """Pipeline from local files (skip RingCentral download)."""
+        """Pipeline from local files (skip CRM download)."""
         print(f"\n{'='*60}")
         print(f"  QA Pipeline: Local Mode")
         print(f"  Files: {len(audio_files)}")

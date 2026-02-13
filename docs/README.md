@@ -6,7 +6,7 @@ Automated 4-agent pipeline for evaluating call center recordings against 24 qual
 
 | Agent | Purpose | Technology |
 |-------|---------|------------|
-| **Agent 1** — Audio | Download / find call recordings | RingCentral SDK or local files |
+| **Agent 1** — Audio | Download / find call recordings | CRM API or local files |
 | **Agent 2** — Transcription | Speech-to-text with diarization | ElevenLabs Scribe v2 |
 | **Agent 3** — Evaluation | Score transcript against 24 QA criteria | OpenRouter / OpenAI GPT-4o |
 | **Agent 4** — Export | Generate Excel, CSV, JSON reports | pandas + openpyxl |
@@ -40,8 +40,11 @@ python src/main.py --folder data/audio
 python src/main.py --folder data/audio
 python src/main.py --local data/audio/call1.mp3 data/audio/call2.mp3
 
-# RingCentral API (requires RC credentials)
-python src/main.py --date-from 2025-02-01 --date-to 2025-02-11
+# CRM API (default — requires CRM_AI_TOKEN)
+python src/main.py --date-from 2026-02-01 --date-to 2026-02-10
+
+# CRM API with agent filter
+python src/main.py --date-from 2026-02-01 --date-to 2026-02-10 --agent-id 120
 ```
 
 ## Pipeline Flow
@@ -61,12 +64,9 @@ python src/main.py --date-from 2025-02-01 --date-to 2025-02-11
 |----------|----------|-------------|
 | `ELEVENLABS_API_KEY` | Yes | ElevenLabs API key for STT |
 | `OPENROUTER_API_KEY` | Yes | OpenRouter API key for LLM evaluation |
+| `CRM_AI_TOKEN` | CRM mode | CRM API bearer token |
 | `OPENAI_API_KEY` | No | Direct OpenAI fallback |
 | `ANTHROPIC_API_KEY` | No | Claude fallback via OpenRouter |
-| `RC_APP_CLIENT_ID` | RC mode | RingCentral app client ID |
-| `RC_APP_CLIENT_SECRET` | RC mode | RingCentral app client secret |
-| `RC_SERVER_URL` | RC mode | RingCentral server URL |
-| `RC_USER_JWT` | RC mode | RingCentral JWT token |
 | `WEBHOOK_URL` | No | Webhook for result notifications |
 
 ## Evaluation Criteria (24 total)

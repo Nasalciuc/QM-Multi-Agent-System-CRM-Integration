@@ -44,7 +44,7 @@ The QM Multi Agent System is a 4-agent pipeline that processes call center recor
 │   ├── utils.py                # Shared utilities (config, logging, env)
 │   │
 │   ├── agents/                 # 4 pipeline agents
-│   │   ├── agent_01_audio.py          # AudioFileFinder + RingCentralAgent
+│   │   ├── agent_01_audio.py          # AudioFileFinder + CRMAgent
 │   │   ├── agent_02_transcription.py  # ElevenLabsSTTAgent
 │   │   ├── agent_03_evaluation.py     # QualityManagementAgent
 │   │   └── agent_04_export.py         # IntegrationAgent
@@ -143,9 +143,9 @@ Creates LLM clients from `config/models.yaml`. Provides:
 
 ### src/agents/ — Pipeline Agents
 
-**Agent 1 — AudioFileFinder / RingCentralAgent**
+**Agent 1 — AudioFileFinder / CRMAgent**
 - `AudioFileFinder`: scans local folder for audio files (.mp3, .wav, .m4a)
-- `RingCentralAgent`: searches and downloads from RingCentral API via SDK
+- `CRMAgent`: searches and downloads call recordings from CRM API
 
 **Agent 2 — ElevenLabsSTTAgent**
 - Transcribes audio using ElevenLabs Scribe v2 with speaker diarization

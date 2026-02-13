@@ -96,24 +96,33 @@ class QualityManagementAgent:
     ) -> Tuple[bool, str]:
         """Detect if call is first or follow-up.
 
-        HIGH-NEW-5: Checks RC metadata first (direction / call-log markers),
-        then falls back to filename heuristic. Metadata is more reliable
-        for auto-generated RingCentral filenames.
+        HIGH-NEW-5: Checks metadata first (CRM flight request
+        status, call result field), then falls back to filename heuristic.
 
         Args:
             filename: Audio filename (used as fallback heuristic).
-            metadata: Optional RingCentral call record dict with
-                      'direction', 'sessionId', etc.
+            metadata: Optional call record dict with 'direction', 'result',
+                      'flight_request_status', 'agent_name', etc.
 
         Returns:
             (is_followup, call_type_label)
         """
         # Priority 1: explicit metadata tag (if caller passes it)
         if metadata:
-            # RC "result" field or custom tag
+            # CRM "result" field or custom tag
             result_field = str(metadata.get("result", "")).lower()
             if result_field in ("follow-up", "followup", "callback"):
                 return True, "Follow-up Call"
+
+            # CRM API: check flight_request_status for follow-up indicators
+            fr_status = str(metadata.get("flight_request_status", "")).lower()
+            if "follow" in fr_status or "callback" in fr_status:
+                return True, "Follow-up Call"
+
+            # CRM API: log agent/client info for traceability
+            if metadata.get("agent_name"):
+                logger.debug(f"CRM metadata — Agent: {metadata['agent_name']}, "
+                             f"Client: {metadata.get('client_name', 'N/A')}")
 
         # Priority 2: filename heuristic (works for manually-named files)
         filename_lower = filename.lower()
