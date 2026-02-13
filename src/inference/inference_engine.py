@@ -15,8 +15,17 @@ import tempfile
 import time
 import logging
 import threading
+from datetime import datetime, date
+from decimal import Decimal
 from pathlib import Path
 from typing import Dict, Optional, Set
+
+# MED-NEW-13: Optional numpy import at module level
+try:
+    import numpy as np
+    _HAS_NUMPY = True
+except ImportError:
+    _HAS_NUMPY = False
 
 from core.model_factory import ModelFactory
 from core.base_llm import LLMResponse
@@ -25,42 +34,43 @@ from inference.response_parser import ResponseParser, ValidationError
 
 logger = logging.getLogger("qa_system.inference")
 
+# Lazy-loaded PII redactor for sanitising error responses (CRIT-NEW-1)
+_pii_redactor_instance = None
+
+
+def _get_pii_redactor():
+    """Lazy-load PIIRedactor to avoid circular imports."""
+    global _pii_redactor_instance
+    if _pii_redactor_instance is None:
+        from processing.pii_redactor import PIIRedactor
+        _pii_redactor_instance = PIIRedactor()
+    return _pii_redactor_instance
+
 
 def _json_serializer(obj):
     """Explicit JSON serializer — replaces dangerous `default=str`.
 
-    CRIT-4: Only handles known types; raises TypeError for unexpected objects
-    instead of silently stringifying them (which can corrupt data).
+    CRIT-4: Only handles known types; raises TypeError for unexpected objects.
     MED-21: Also handles numpy scalars, Decimal, and bytes.
+    MED-NEW-13: Imports moved to module level.
     """
     if isinstance(obj, Path):
         return str(obj)
-    try:
-        from datetime import datetime, date
-        if isinstance(obj, (datetime, date)):
-            return obj.isoformat()
-    except ImportError:
-        pass
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
     if isinstance(obj, set):
         return sorted(obj)
     # MED-21: numpy scalar → Python native
-    try:
-        import numpy as np
+    if _HAS_NUMPY:
         if isinstance(obj, (np.integer,)):
             return int(obj)
         if isinstance(obj, (np.floating,)):
             return float(obj)
         if isinstance(obj, np.ndarray):
             return obj.tolist()
-    except ImportError:
-        pass
     # MED-21: Decimal → float
-    try:
-        from decimal import Decimal
-        if isinstance(obj, Decimal):
-            return float(obj)
-    except ImportError:
-        pass
+    if isinstance(obj, Decimal):
+        return float(obj)
     # MED-21: bytes → utf-8 string
     if isinstance(obj, bytes):
         return obj.decode("utf-8", errors="replace")
@@ -209,8 +219,8 @@ class InferenceEngine:
                 evaluation["cost_usd"] = llm_response.cost_usd
                 evaluation["eval_time_seconds"] = llm_response.elapsed_seconds
 
-                # Cache the result
-                if self._enable_cache:
+                # Cache the result — only if it has no error key (HIGH-NEW-7)
+                if self._enable_cache and "error" not in evaluation:
                     self._save_cache(cache_key, evaluation)
 
                 logger.info(
@@ -227,10 +237,13 @@ class InferenceEngine:
                     )
                     continue
                 logger.error(f"Validation failed after {max_retries + 1} attempts: {e}")
+                # CRIT-NEW-1: PII-redact raw LLM text before returning —
+                # this dict may flow all the way to export/JSON files.
+                redacted_raw = _get_pii_redactor().redact(raw_text)["text"] if raw_text else ""
                 return {
                     "error": f"Validation error: {e}",
                     "call_type": call_type,
-                    "raw_response": raw_text,
+                    "raw_response": redacted_raw,
                 }
 
             except Exception as e:
@@ -262,13 +275,16 @@ class InferenceEngine:
     @staticmethod
     def _cache_key(transcript: str, call_type: str, criteria_count: int,
                    model: str = "", criteria_hash: str = "",
-                   prompt_hash: str = "") -> str:
+                   prompt_hash: str = "", temperature: float = 0.1) -> str:
         """Generate cache key from transcript + evaluation parameters + model + criteria content.
 
-        Includes criteria content hash and prompt hash to invalidate cache
-        when criteria definitions or prompts change (not just count).
+        MED-NEW-12: Includes temperature so different temperature runs
+        don't serve stale results from a different temperature setting.
         """
-        content = f"{model}|{call_type}|{criteria_count}|{criteria_hash}|{prompt_hash}|{transcript}"
+        content = (
+            f"{model}|{call_type}|{criteria_count}|{criteria_hash}|"
+            f"{prompt_hash}|{temperature}|{transcript}"
+        )
         return hashlib.sha256(content.encode()).hexdigest()
 
     def _load_cache(self, key: str) -> Optional[Dict]:

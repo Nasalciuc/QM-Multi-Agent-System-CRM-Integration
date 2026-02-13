@@ -148,6 +148,37 @@ class TestCallTypeDetection:
         assert not is_followup
         assert call_type == "First Call"
 
+    def test_metadata_followup(self, agent):
+        """HIGH-NEW-5: Metadata with 'follow-up' result should detect follow-up."""
+        is_followup, call_type = agent.detect_call_type(
+            "12345_20250201.mp3",
+            metadata={"result": "follow-up"},
+        )
+        assert is_followup
+        assert call_type == "Follow-up Call"
+
+    def test_metadata_callback(self, agent):
+        """HIGH-NEW-5: Metadata with 'callback' result should detect follow-up."""
+        is_followup, call_type = agent.detect_call_type(
+            "auto_generated_id.mp3",
+            metadata={"result": "callback"},
+        )
+        assert is_followup
+        assert call_type == "Follow-up Call"
+
+    def test_metadata_no_followup_falls_to_filename(self, agent):
+        """Non-followup metadata should still fall through to filename heuristic."""
+        is_followup, call_type = agent.detect_call_type(
+            "2nd_call.mp3",
+            metadata={"result": "completed"},
+        )
+        assert is_followup  # filename heuristic picks it up
+
+    def test_metadata_none_uses_filename(self, agent):
+        """When metadata is None, filename heuristic should be used."""
+        is_followup, call_type = agent.detect_call_type("followup_call.mp3", metadata=None)
+        assert is_followup
+
 
 # --- Tests: Score Calculation ---
 

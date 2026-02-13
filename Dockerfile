@@ -52,6 +52,10 @@ RUN mkdir -p data/audio data/transcripts data/evaluations data/cache && \
 ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
 
+# MED-NEW-10: Docker HEALTHCHECK — validates config and env vars
+HEALTHCHECK --interval=60s --timeout=10s --start-period=5s --retries=3 \
+    CMD ["python", "src/main.py", "--check"]
+
 # Run as non-root
 USER appuser
 

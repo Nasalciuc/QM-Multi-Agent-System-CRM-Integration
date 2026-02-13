@@ -12,6 +12,7 @@ Exports:
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime, date
+from decimal import Decimal
 import json
 import os
 import time
@@ -19,6 +20,13 @@ import logging
 
 import pandas as pd
 import httpx
+
+# MED-NEW-13: Import numpy at module level (optional dep)
+try:
+    import numpy as np
+    _HAS_NUMPY = True
+except ImportError:
+    _HAS_NUMPY = False
 
 logger = logging.getLogger("qa_system.agents")
 
@@ -28,6 +36,7 @@ def _json_serializer(obj):
 
     CRIT-4: Only handles known types; raises TypeError for unexpected objects.
     MED-21: Also handles numpy scalars, Decimal, and bytes.
+    MED-NEW-13: Imports moved to module level for cleanliness.
     """
     if isinstance(obj, Path):
         return str(obj)
@@ -36,23 +45,16 @@ def _json_serializer(obj):
     if isinstance(obj, set):
         return sorted(obj)
     # MED-21: numpy scalar → Python native
-    try:
-        import numpy as np
+    if _HAS_NUMPY:
         if isinstance(obj, (np.integer,)):
             return int(obj)
         if isinstance(obj, (np.floating,)):
             return float(obj)
         if isinstance(obj, np.ndarray):
             return obj.tolist()
-    except ImportError:
-        pass
     # MED-21: Decimal → float
-    try:
-        from decimal import Decimal
-        if isinstance(obj, Decimal):
-            return float(obj)
-    except ImportError:
-        pass
+    if isinstance(obj, Decimal):
+        return float(obj)
     # MED-21: bytes → utf-8 string
     if isinstance(obj, bytes):
         return obj.decode("utf-8", errors="replace")
@@ -215,9 +217,10 @@ class IntegrationAgent:
         return json_path
 
     def send_webhook(self, payload: dict) -> bool:
-        """POST payload to webhook URL with retry. Returns True on success.
+        """POST payload to webhook URL with retry + exponential backoff.
 
-        HIGH-10: Uses shorter timeouts and caps retry delay to minimize blocking.
+        HIGH-10: Uses shorter timeouts and caps retry delay.
+        MED-NEW-9: Exponential backoff between retries.
         """
         if not self.webhook_url:
             return False
@@ -235,7 +238,9 @@ class IntegrationAgent:
                 logger.warning(f"Webhook attempt {attempt+1} failed: {e}")
 
             if attempt < max_attempts - 1:
-                time.sleep(min(2 ** attempt, 4))  # cap at 4s
+                backoff = min(2 ** (attempt + 1), 8)  # MED-NEW-9: 2, 4, (capped 8)
+                logger.debug(f"Webhook retry backoff: {backoff}s")
+                time.sleep(backoff)
 
         logger.error("Webhook failed after 3 attempts")
         return False

@@ -89,8 +89,33 @@ class QualityManagementAgent:
             f"Provider: {model_factory.primary.provider_name}"
         )
 
-    def detect_call_type(self, filename: str) -> Tuple[bool, str]:
-        """Detect if call is first or follow-up from filename."""
+    def detect_call_type(
+        self,
+        filename: str,
+        metadata: Optional[Dict] = None,
+    ) -> Tuple[bool, str]:
+        """Detect if call is first or follow-up.
+
+        HIGH-NEW-5: Checks RC metadata first (direction / call-log markers),
+        then falls back to filename heuristic. Metadata is more reliable
+        for auto-generated RingCentral filenames.
+
+        Args:
+            filename: Audio filename (used as fallback heuristic).
+            metadata: Optional RingCentral call record dict with
+                      'direction', 'sessionId', etc.
+
+        Returns:
+            (is_followup, call_type_label)
+        """
+        # Priority 1: explicit metadata tag (if caller passes it)
+        if metadata:
+            # RC "result" field or custom tag
+            result_field = str(metadata.get("result", "")).lower()
+            if result_field in ("follow-up", "followup", "callback"):
+                return True, "Follow-up Call"
+
+        # Priority 2: filename heuristic (works for manually-named files)
         filename_lower = filename.lower()
         follow_up_indicators = ["2nd", "second", "follow", "follow-up", "followup"]
         is_followup = any(indicator in filename_lower for indicator in follow_up_indicators)
@@ -142,10 +167,18 @@ class QualityManagementAgent:
 
         # 4. Filter criteria: skip first_call_only for follow-ups
         applicable_criteria = {}
+        skipped_criteria = []  # MED-NEW-14: Track skipped criteria
         for key, criteria in self.EVALUATION_CRITERIA.items():
             if is_followup and criteria["first_call_only"]:
+                skipped_criteria.append(key)
                 continue
             applicable_criteria[key] = criteria
+
+        if skipped_criteria:
+            logger.info(
+                f"Follow-up call '{filename}': skipped {len(skipped_criteria)} "
+                f"first-call-only criteria: {', '.join(skipped_criteria)}"
+            )
 
         # 5. Run inference engine (LLM call + parsing + retry)
         evaluation = self._engine.evaluate(

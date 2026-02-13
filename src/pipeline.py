@@ -12,6 +12,7 @@ Flow:
 
 from typing import List, Dict, Optional
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import signal
 import time
 import logging
@@ -20,7 +21,11 @@ logger = logging.getLogger("qa_system.pipeline")
 
 
 class _GracefulShutdown:
-    """MED-3: Handle SIGINT/SIGTERM for graceful shutdown."""
+    """MED-3: Handle SIGINT/SIGTERM for graceful shutdown.
+
+    MED-NEW-15: reset() is called at pipeline start so stale state
+    from a previous run in the same process does not carry over.
+    """
     _triggered = False
 
     @classmethod
@@ -34,6 +39,7 @@ class _GracefulShutdown:
 
     @classmethod
     def reset(cls):
+        """Reset shutdown flag — MUST be called at pipeline start."""
         cls._triggered = False
 
 
@@ -53,7 +59,8 @@ class Pipeline:
     def __init__(self, agent_01, agent_02, agent_03, agent_04,
                  max_consecutive_failures: int = 3,
                  delay_between_evaluations: float = 1.0,
-                 cost_warning_threshold_usd: float = 0.50):
+                 cost_warning_threshold_usd: float = 0.50,
+                 max_workers: int = 1):
         """Store all 4 agents and initialize tracking.
 
         Args:
@@ -64,6 +71,8 @@ class Pipeline:
             max_consecutive_failures: Circuit breaker threshold.
             delay_between_evaluations: Seconds to wait between LLM calls (HIGH-2).
             cost_warning_threshold_usd: Warn/stop if cumulative batch cost exceeds this.
+            max_workers: Number of parallel evaluation workers (HIGH-NEW-8).
+                         Set to 1 for sequential processing.
         """
         self.audio_agent = agent_01
         self.stt_agent = agent_02
@@ -75,6 +84,7 @@ class Pipeline:
         self.cost_warning_threshold_usd = cost_warning_threshold_usd
         self._providers_used: set = set()  # HIGH-12: track which providers were used
         self._cost_warning_issued = False
+        self._max_workers = max(1, max_workers)  # HIGH-NEW-8: concurrency level
 
         # CRIT-1: Register signal handlers, save old ones so we can restore later
         self._old_sigint = signal.signal(signal.SIGINT, _GracefulShutdown.trigger)
@@ -89,6 +99,16 @@ class Pipeline:
         if self._old_sigterm is not None and hasattr(signal, 'SIGTERM'):
             signal.signal(signal.SIGTERM, self._old_sigterm)
 
+    @staticmethod
+    def _interruptible_sleep(seconds: float, granularity: float = 0.25) -> None:
+        """MED-NEW-11: Sleep in small increments so shutdown signals
+        are noticed promptly instead of blocking for the full duration.
+        """
+        remaining = seconds
+        while remaining > 0 and not _GracefulShutdown.is_triggered():
+            time.sleep(min(granularity, remaining))
+            remaining -= granularity
+
     def run(self, date_from: str, date_to: Optional[str] = None) -> List[Dict]:
         """Full pipeline: RingCentral -> ElevenLabs -> QA -> Export"""
         print(f"\n{'='*60}")
@@ -97,6 +117,7 @@ class Pipeline:
         print(f"{'='*60}\n")
 
         pipeline_start = time.time()
+        _GracefulShutdown.reset()  # MED-NEW-15: Clear stale shutdown state
 
         # Step 1: Download recordings from RingCentral
         print("STEP 1: Downloading recordings from RingCentral...")
@@ -124,6 +145,7 @@ class Pipeline:
         print(f"{'='*60}\n")
 
         pipeline_start = time.time()
+        _GracefulShutdown.reset()  # MED-NEW-15: Clear stale shutdown state
 
         if not audio_files:
             print("  No audio files provided. Pipeline complete.")
@@ -167,8 +189,14 @@ class Pipeline:
                 break
 
             # HIGH-2: Rate limiting between LLM calls
+            # MED-NEW-11: Use interruptible sleep so shutdown signals
+            # are honoured during the delay window.
             if eval_count > 1 and self.delay_between_evaluations > 0:
-                time.sleep(self.delay_between_evaluations)
+                self._interruptible_sleep(self.delay_between_evaluations)
+                if _GracefulShutdown.is_triggered():
+                    logger.warning("Graceful shutdown during rate-limit delay.")
+                    print(f"\n  STOPPED: Shutdown signal received during delay.")
+                    break
 
             evaluation = self.qa_agent.evaluate_call(data["transcript"], filename)
 
@@ -194,7 +222,10 @@ class Pipeline:
                     break
                 continue
 
-            consecutive_failures = 0  # Reset on success
+            # HIGH-NEW-6: Only reset circuit breaker on *genuine* success
+            # — soft failures (validation, too-short) should NOT reset it
+            if evaluation.get("status") != "TOO_SHORT":
+                consecutive_failures = 0
             score_data = self.qa_agent.calculate_score(evaluation)
 
             cost = evaluation.get("cost_usd", 0)

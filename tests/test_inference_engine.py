@@ -251,3 +251,43 @@ class TestEvaluateFlow:
             max_retries=1,
         )
         assert "error" in result
+
+    def test_error_results_not_cached(self, engine, mock_factory, tmp_path):
+        """HIGH-NEW-7: Error evaluations must NOT be cached."""
+        mock_factory.chat_with_fallback.side_effect = RuntimeError("API down")
+
+        engine.evaluate(
+            "transcript_err", "First Call",
+            {"c1": {"category": "a", "weight": 1, "description": "d"}},
+            max_retries=0,
+        )
+        # No cache files should have been written
+        cache_files = list((tmp_path / "cache").glob("*.json"))
+        assert len(cache_files) == 0
+
+    def test_validation_error_raw_response_is_redacted(self, engine_no_cache, mock_factory):
+        """CRIT-NEW-1: raw_response in error returns must be PII-redacted."""
+        from inference.response_parser import ValidationError
+        # LLM returns text containing a phone number (PII)
+        pii_text = '{"bad json"} Call me at 555-123-4567 about account A-1234'
+        mock_response = LLMResponse(
+            text=pii_text,
+            input_tokens=100, output_tokens=50, cost_usd=0.01,
+            model="gpt-4o", provider="openrouter", elapsed_seconds=1.0,
+        )
+        mock_factory.chat_with_fallback.return_value = mock_response
+
+        # Patch parser to always raise ValidationError
+        with patch("inference.inference_engine.ResponseParser") as MockParser:
+            MockParser.return_value.parse.side_effect = ValidationError("bad structure")
+            result = engine_no_cache.evaluate(
+                "some transcript", "First Call",
+                {"c1": {"category": "a", "weight": 1, "description": "d"}},
+                max_retries=0,
+            )
+
+        assert "error" in result
+        raw = result.get("raw_response", "")
+        # Phone number should have been redacted
+        assert "555-123-4567" not in raw
+        assert "[PHONE]" in raw

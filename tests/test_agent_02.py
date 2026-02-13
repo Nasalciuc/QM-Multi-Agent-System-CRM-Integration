@@ -82,9 +82,10 @@ def agent_no_persist(mock_client):
 
 @pytest.fixture
 def fake_audio(tmp_path):
-    """Create a fake audio file."""
+    """Create a fake audio file with MP3 magic number."""
     f = tmp_path / "call1.mp3"
-    f.write_bytes(b"fake audio data")
+    # ID3 header (MP3 with ID3 tag) followed by dummy data
+    f.write_bytes(b"ID3" + b"\x00" * 100)
     return f
 
 
@@ -206,7 +207,7 @@ class TestBatchTranscription:
         files = []
         for name in ["a.mp3", "b.mp3", "c.mp3"]:
             f = tmp_path / name
-            f.write_bytes(b"audio")
+            f.write_bytes(b"ID3" + b"\x00" * 50)
             files.append(f)
 
         results = agent.transcribe_batch(files)
@@ -243,11 +244,25 @@ class TestBatchTranscription:
         """Quota exceeded error should stop the batch early."""
         files = [tmp_path / f"{i}.mp3" for i in range(5)]
         for f in files:
-            f.write_bytes(b"audio")
+            f.write_bytes(b"ID3" + b"\x00" * 50)
 
         mock_client.speech_to_text.convert.side_effect = Exception("quota_exceeded")
         results = agent.transcribe_batch(files)
         assert len(results) == 1
+
+    def test_batch_rate_limiting(self, agent, tmp_path, mock_client):
+        """CRIT-NEW-2: Batch should respect delay between API calls."""
+        import time as _time
+
+        files = [tmp_path / f"{i}.mp3" for i in range(3)]
+        for f in files:
+            f.write_bytes(b"ID3" + b"\x00" * 50)
+
+        start = _time.time()
+        agent.transcribe_batch(files, delay_between_calls=0.1)
+        elapsed = _time.time() - start
+        # With 3 files and 0.1s delay between calls, expect at least 0.2s total delay
+        assert elapsed >= 0.15, f"Batch was too fast ({elapsed:.2f}s), rate limit may not be working"
 
 
 # --- Tests: Timeout (CRIT-3) ---
@@ -269,6 +284,53 @@ class TestTimeout:
             timeout_seconds=1,
         )
         f = tmp_path / "slow.mp3"
-        f.write_bytes(b"audio")
+        f.write_bytes(b"ID3" + b"\x00" * 50)
         with pytest.raises(TimeoutError, match="timed out"):
             agent.transcribe(f)
+
+
+# --- Tests: Audio File Validation (CRIT-NEW-4) ---
+
+class TestAudioValidation:
+
+    def test_validate_missing_file(self, agent, tmp_path):
+        """Should raise FileNotFoundError for non-existent file."""
+        with pytest.raises(FileNotFoundError):
+            agent.validate_audio_file(tmp_path / "nonexistent.mp3")
+
+    def test_validate_empty_file(self, agent, tmp_path):
+        """Should raise ValueError for 0-byte file."""
+        empty = tmp_path / "empty.mp3"
+        empty.write_bytes(b"")
+        with pytest.raises(ValueError, match="empty"):
+            agent.validate_audio_file(empty)
+
+    def test_validate_oversized_file(self, agent, tmp_path):
+        """Should raise ValueError for files exceeding size limit."""
+        from agents.agent_02_transcription import _MAX_AUDIO_FILE_BYTES
+        # Create a sparse-ish file that reports > limit
+        big = tmp_path / "big.mp3"
+        big.write_bytes(b"ID3" + b"\x00" * (_MAX_AUDIO_FILE_BYTES + 1))
+        with pytest.raises(ValueError, match="too large"):
+            agent.validate_audio_file(big)
+
+    def test_validate_valid_mp3(self, agent, tmp_path):
+        """Valid MP3 file (ID3 header) should pass validation."""
+        mp3 = tmp_path / "valid.mp3"
+        mp3.write_bytes(b"ID3\x04\x00\x00" + b"\x00" * 100)
+        agent.validate_audio_file(mp3)  # Should not raise
+
+    def test_validate_valid_wav(self, agent, tmp_path):
+        """Valid WAV file (RIFF header) should pass validation."""
+        wav = tmp_path / "valid.wav"
+        wav.write_bytes(b"RIFF" + b"\x00" * 100)
+        agent.validate_audio_file(wav)  # Should not raise
+
+    def test_validate_unrecognised_format_warns(self, agent, tmp_path, caplog):
+        """Unrecognised magic number should log a warning but not raise."""
+        weird = tmp_path / "data.bin"
+        weird.write_bytes(b"ZZZZ" + b"\x00" * 100)
+        import logging
+        with caplog.at_level(logging.WARNING):
+            agent.validate_audio_file(weird)  # Should not raise
+        assert "Unrecognised audio header" in caplog.text

@@ -117,15 +117,26 @@ class OpenAIClient(BaseLLM):
         return round(cost, 6)
 
     def is_available(self) -> bool:
-        """Check availability by sending a minimal request."""
+        """CRIT-NEW-3: Lightweight health check — list models instead of
+        burning a real completion (which costs credits).
+
+        Falls back to a minimal completion only if models.list() is
+        not supported by the provider (e.g. some OpenRouter endpoints).
+        """
         try:
-            response = self._client.chat.completions.create(
-                model=self._model,
-                messages=[{"role": "user", "content": "ping"}],
-                max_tokens=5,
-                temperature=0.0,
-            )
-            return bool(response.choices)
-        except Exception as e:
-            logger.warning(f"Health check failed for {self._provider}: {e}")
-            return False
+            # Cheap auth-only call: list available models
+            models = self._client.models.list()
+            return bool(models)
+        except Exception:
+            # Fallback: some providers don't support models.list()
+            try:
+                response = self._client.chat.completions.create(
+                    model=self._model,
+                    messages=[{"role": "user", "content": "hi"}],
+                    max_tokens=1,
+                    temperature=0.0,
+                )
+                return bool(response.choices)
+            except Exception as e:
+                logger.warning(f"Health check failed for {self._provider}: {e}")
+                return False

@@ -33,6 +33,20 @@ def _get_redactor():
     return _PIIRedactor()
 
 
+# Audio file validation constants (CRIT-NEW-4)
+_AUDIO_MAGIC_NUMBERS = {
+    b'ID3': 'mp3',         # MP3 with ID3 tag
+    b'\xff\xfb': 'mp3',   # MP3 frame sync
+    b'\xff\xf3': 'mp3',   # MP3 frame sync (alt)
+    b'\xff\xf2': 'mp3',   # MP3 frame sync (alt)
+    b'RIFF': 'wav',        # WAV
+    b'fLaC': 'flac',       # FLAC
+    b'OggS': 'ogg',        # OGG
+}
+_MAX_AUDIO_FILE_MB = 500
+_MAX_AUDIO_FILE_BYTES = _MAX_AUDIO_FILE_MB * 1024 * 1024
+
+
 class ElevenLabsSTTAgent:
     """Agent: Speech-to-Text with ElevenLabs Scribe v2 + diarization."""
 
@@ -90,16 +104,56 @@ class ElevenLabsSTTAgent:
             f"diarize={self.diarize}"
         )
 
+    @staticmethod
+    def validate_audio_file(audio_path: Path) -> None:
+        """CRIT-NEW-4: Validate audio file before sending to API.
+
+        Checks:
+          - File exists
+          - File is not empty (0 bytes)
+          - File does not exceed size limit
+          - File starts with a recognised audio magic number
+
+        Raises:
+            FileNotFoundError: File does not exist.
+            ValueError: File is empty, too large, or not a recognised audio format.
+        """
+        if not audio_path.exists():
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+        size = audio_path.stat().st_size
+        if size == 0:
+            raise ValueError(f"Audio file is empty (0 bytes): {audio_path.name}")
+        if size > _MAX_AUDIO_FILE_BYTES:
+            raise ValueError(
+                f"Audio file too large: {audio_path.name} "
+                f"({size / 1024 / 1024:.1f} MB > {_MAX_AUDIO_FILE_MB} MB limit)"
+            )
+
+        # Magic-number check (read first 4 bytes)
+        with open(audio_path, "rb") as f:
+            header = f.read(4)
+        recognised = any(header.startswith(magic) for magic in _AUDIO_MAGIC_NUMBERS)
+        if not recognised:
+            logger.warning(
+                f"Unrecognised audio header for {audio_path.name}: {header[:4]!r}. "
+                f"File may not be a valid audio file."
+            )
+
     def transcribe(self, audio_path: Path) -> Dict:
         """Transcribe a single audio file using ElevenLabs Scribe v2.
 
         MED-12: Retries transient failures with exponential backoff.
         CRIT-3: Uses ThreadPoolExecutor for cross-platform timeout.
+        CRIT-NEW-4: Validates audio file before API call.
 
         Returns:
             Dict with keys: text, raw_text, speakers_detected,
             language_code, diarized (bool).
         """
+        # CRIT-NEW-4: Validate before spending API credits
+        self.validate_audio_file(audio_path)
+
         last_error: Optional[Exception] = None
         for attempt in range(self.MAX_RETRIES + 1):
             try:
@@ -250,10 +304,22 @@ class ElevenLabsSTTAgent:
             logger.warning(f"Failed to save transcript for {filename}: {e}")
             return None
 
-    def transcribe_batch(self, audio_files: List[Path]) -> Dict[str, Dict]:
-        """
-        Transcribe multiple files, track progress and costs.
-        Returns dict: {filename: {transcript, duration, credits_used, status, ...}}
+    def transcribe_batch(
+        self,
+        audio_files: List[Path],
+        delay_between_calls: float = 0.5,
+    ) -> Dict[str, Dict]:
+        """Transcribe multiple files, track progress and costs.
+
+        CRIT-NEW-2: Adds configurable delay between API calls to avoid
+        hammering ElevenLabs rate limits.
+
+        Args:
+            audio_files: List of audio file paths.
+            delay_between_calls: Seconds to wait between consecutive API calls.
+
+        Returns:
+            dict: {filename: {transcript, duration, credits_used, status, ...}}
         """
         transcripts = {}
         total = len(audio_files)
@@ -294,6 +360,10 @@ class ElevenLabsSTTAgent:
                     "transcript_path": str(saved_path) if saved_path else None,
                 }
                 logger.info(f"  OK: {filename} ({duration or 0:.1f} min, {elapsed:.1f}s)")
+
+                # CRIT-NEW-2: Rate-limit between consecutive API calls
+                if i < total and delay_between_calls > 0:
+                    time.sleep(delay_between_calls)
 
             except Exception as e:
                 elapsed = time.time() - start
