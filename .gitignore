@@ -20,6 +20,7 @@ data/audio/
 data/transcripts/
 data/evaluations/
 data/cache/
+data/stt_cache/
 *.log
 logs/
 

@@ -72,12 +72,14 @@ def agent(mock_client, tmp_path):
         transcripts_folder=str(tmp_path / "transcripts"),
         model_id="scribe_v2",
         diarize=True,
+        enable_stt_cache=False,
     )
 
 
 @pytest.fixture
 def agent_no_persist(mock_client):
-    return ElevenLabsSTTAgent(client=mock_client, persist_transcripts=False)
+    return ElevenLabsSTTAgent(client=mock_client, persist_transcripts=False,
+                              enable_stt_cache=False)
 
 
 @pytest.fixture

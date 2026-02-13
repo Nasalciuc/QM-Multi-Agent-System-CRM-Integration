@@ -61,7 +61,8 @@ class Pipeline:
                  max_consecutive_failures: int = 3,
                  delay_between_evaluations: float = 1.0,
                  cost_warning_threshold_usd: float = 0.50,
-                 max_workers: int = 1):
+                 max_workers: int = 1,
+                 max_budget_usd: float = 0.0):
         """Store all 4 agents and initialize tracking.
 
         Args:
@@ -74,6 +75,8 @@ class Pipeline:
             cost_warning_threshold_usd: Warn/stop if cumulative batch cost exceeds this.
             max_workers: Number of parallel evaluation workers (HIGH-NEW-8).
                          Set to 1 for sequential processing.
+            max_budget_usd: Hard budget limit. 0 = unlimited.
+                            Pipeline stops evaluations when this is exceeded.
         """
         self.audio_agent = agent_01
         self.stt_agent = agent_02
@@ -86,6 +89,8 @@ class Pipeline:
         self._providers_used: set = set()  # HIGH-12: track which providers were used
         self._cost_warning_issued = False
         self._max_workers = max(1, max_workers)  # HIGH-NEW-8: concurrency level
+        self._max_budget_usd = max_budget_usd  # P3: Hard budget limit
+        self._budget_80_warned = False  # P3: 80% budget warning flag
 
         # CRIT-1: Register signal handlers, save old ones so we can restore later
         self._old_sigint = signal.signal(signal.SIGINT, _GracefulShutdown.trigger)
@@ -188,6 +193,7 @@ class Pipeline:
         success_count = sum(1 for v in transcripts.values() if v.get("status") == "Success")
         # MED-8: Aggregate STT costs
         self._stt_cost = sum(v.get("cost_usd", 0) for v in transcripts.values())
+        self._transcripts = transcripts  # Store for summary access
         print(f"  -> {success_count} transcripts ready\n")
 
         # Step 3: Evaluate with QA Agent
@@ -257,6 +263,29 @@ class Pipeline:
             cost = evaluation.get("cost_usd", 0)
             self.total_cost += cost
 
+            # P3: Hard budget enforcement — stop when exceeded
+            combined_cost = self.total_cost + getattr(self, '_stt_cost', 0)
+            if self._max_budget_usd > 0:
+                # 80% warning
+                if (combined_cost >= self._max_budget_usd * 0.8
+                        and not self._budget_80_warned):
+                    self._budget_80_warned = True
+                    logger.warning(
+                        f"Budget 80% warning: ${combined_cost:.4f} / "
+                        f"${self._max_budget_usd:.2f}"
+                    )
+                    print(f"\n  ⚠ BUDGET 80%: ${combined_cost:.4f} / "
+                          f"${self._max_budget_usd:.2f}")
+                # Hard stop at 100%
+                if combined_cost >= self._max_budget_usd:
+                    logger.error(
+                        f"Budget exceeded: ${combined_cost:.4f} >= "
+                        f"${self._max_budget_usd:.2f}. Stopping."
+                    )
+                    print(f"\n  STOPPED: Budget exceeded "
+                          f"(${combined_cost:.4f} >= ${self._max_budget_usd:.2f})")
+                    break
+
             # Cost budget guard: warn when cumulative cost exceeds threshold
             if (self.cost_warning_threshold_usd > 0
                     and self.total_cost >= self.cost_warning_threshold_usd
@@ -313,7 +342,7 @@ class Pipeline:
         return evaluations
 
     def print_summary(self, evaluations: List[Dict]) -> None:
-        """Print evaluation summary."""
+        """Print comprehensive evaluation summary with cost & cache breakdown."""
         if not evaluations:
             print("No evaluations to summarize.")
             return
@@ -322,33 +351,113 @@ class Pipeline:
         if not scores:
             print("No scored evaluations to summarize.")
             return
-        avg_score = sum(scores) / len(scores)
-        total_cost = sum(e.get("cost_usd", 0) for e in evaluations)
 
-        print(f"\n{'='*60}")
-        print(f"  SUMMARY")
-        print(f"{'='*60}")
-        print(f"  Calls processed: {len(evaluations)}")
-        print(f"  Average score:   {avg_score:.1f}/100")
-        print(f"  Best score:      {max(scores):.1f}/100")
-        print(f"  Worst score:     {min(scores):.1f}/100")
-        print(f"  Total cost:      ${total_cost:.4f}")
-        # MED-8: Include STT cost in summary
+        avg_score = sum(scores) / len(scores)
+        llm_cost = sum(e.get("cost_usd", 0) for e in evaluations)
         stt_cost = getattr(self, '_stt_cost', 0)
+        combined_cost = llm_cost + stt_cost
+
+        # Token utilization
+        total_input_tokens = sum(
+            e.get("tokens_used", {}).get("input", 0) for e in evaluations
+        )
+        total_output_tokens = sum(
+            e.get("tokens_used", {}).get("output", 0) for e in evaluations
+        )
+
+        print(f"\n{'='*70}")
+        print(f"  PIPELINE SUMMARY")
+        print(f"{'='*70}")
+
+        # ── Quality Scores ───────────────────────────────────────────
+        print(f"\n  Quality Scores:")
+        print(f"    Calls evaluated:  {len(scores)}")
+        print(f"    Average score:    {avg_score:.1f}/100")
+        print(f"    Best score:       {max(scores):.1f}/100")
+        print(f"    Worst score:      {min(scores):.1f}/100")
+        if len(scores) > 1:
+            std_dev = (sum((s - avg_score) ** 2 for s in scores) / len(scores)) ** 0.5
+            print(f"    Std deviation:    {std_dev:.1f}")
+
+        # ── Cost Breakdown ───────────────────────────────────────────
+        print(f"\n  Cost Breakdown:")
+        print(f"    LLM (eval):       ${llm_cost:.4f}")
         if stt_cost > 0:
-            print(f"  STT cost:        ${stt_cost:.4f}")
-            print(f"  Combined cost:   ${total_cost + stt_cost:.4f}")
-        # HIGH-12: Show which providers were used
+            print(f"    STT (transcribe): ${stt_cost:.4f}")
+        print(f"    Total:            ${combined_cost:.4f}")
+
+        # STT cache savings
+        stt_cache_stats = {}
+        if hasattr(self.stt_agent, 'stt_cache') and hasattr(self.stt_agent.stt_cache, 'stats'):
+            try:
+                stats = self.stt_agent.stt_cache.stats
+                if isinstance(stats, dict):
+                    stt_cache_stats = stats
+            except Exception:
+                pass
+        if stt_cache_stats.get("hits", 0) > 0:
+            # Estimate saved cost from cached transcriptions
+            cached_savings = sum(
+                (v.get("duration", 0) or 0) * 0.005
+                for v in getattr(self, '_transcripts', {}).values()
+                if v.get("cached")
+            )
+            print(f"    STT cache saved:  ${cached_savings:.4f}")
+
+        # Budget status
+        if self._max_budget_usd > 0:
+            remaining = self._max_budget_usd - combined_cost
+            pct_used = combined_cost / self._max_budget_usd * 100
+            print(f"\n  Budget Status:")
+            print(f"    Budget:           ${self._max_budget_usd:.2f}")
+            print(f"    Used:             ${combined_cost:.4f} ({pct_used:.1f}%)")
+            print(f"    Remaining:        ${remaining:.4f}")
+
+        # ── Token Utilization ────────────────────────────────────────
+        print(f"\n  Token Utilization:")
+        print(f"    Input tokens:     {total_input_tokens:,}")
+        print(f"    Output tokens:    {total_output_tokens:,}")
+        print(f"    Total tokens:     {total_input_tokens + total_output_tokens:,}")
+
+        # ── Cache Performance ────────────────────────────────────────
+        print(f"\n  Cache Performance:")
+
+        # STT cache
+        if stt_cache_stats:
+            print(f"    STT cache:        {stt_cache_stats['hits']} hits / "
+                  f"{stt_cache_stats['total_lookups']} lookups "
+                  f"({stt_cache_stats['hit_rate_pct']}%)")
+
+        # LLM cache
+        llm_stats = {}
+        if hasattr(self.qa_agent, '_engine') and hasattr(self.qa_agent._engine, 'cache_stats'):
+            try:
+                cs = self.qa_agent._engine.cache_stats
+                if isinstance(cs, dict):
+                    llm_stats = cs
+            except Exception:
+                pass
+        if llm_stats:
+            print(f"    LLM L1 (memory):  {llm_stats['memory_hits']} hits "
+                  f"({llm_stats['memory_cache_size']}/{llm_stats['memory_cache_maxsize']} slots)")
+            print(f"    LLM L2 (disk):    {llm_stats['disk_hits']} hits "
+                  f"({llm_stats['combined_hit_rate_pct']}% combined)")
+
+        # ── Providers Used ───────────────────────────────────────────
         if self._providers_used:
-            print(f"  Providers used:  {', '.join(sorted(self._providers_used))}")
+            print(f"\n  Providers:          {', '.join(sorted(self._providers_used))}")
             if len(self._providers_used) > 1:
                 logger.warning(f"Multiple providers used (possible fallback): {self._providers_used}")
-        print(f"{'='*60}")
 
-        # Per-file scores
-        print(f"\n  {'File':<40} {'Type':<15} {'Score':>6}")
-        print(f"  {'-'*40} {'-'*15} {'-'*6}")
+        print(f"\n{'='*70}")
+
+        # ── Per-File Table ───────────────────────────────────────────
+        print(f"\n  {'File':<40} {'Type':<15} {'Score':>6} {'Cost':>8}")
+        print(f"  {'-'*40} {'-'*15} {'-'*6} {'-'*8}")
         for e in evaluations:
             if "overall_score" not in e:
                 continue
-            print(f"  {e['filename']:<40} {e['call_type']:<15} {e['overall_score']:>5.1f}")
+            cost_str = f"${e.get('cost_usd', 0):.4f}"
+            print(f"  {e['filename']:<40} {e['call_type']:<15} "
+                  f"{e['overall_score']:>5.1f} {cost_str:>8}")
+        print()

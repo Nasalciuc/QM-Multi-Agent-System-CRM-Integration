@@ -11,6 +11,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 from utils import setup_logging, load_config, load_env, validate_env, validate_models_config
 from agents.agent_01_audio import AudioFileFinder, CRMAgent
@@ -24,6 +25,125 @@ from pipeline import Pipeline
 _BASE_ENV_KEYS = ['ELEVENLABS_API_KEY', 'OPENROUTER_API_KEY']
 _CRM_ENV_KEYS = ['CRM_AI_TOKEN']
 
+# Cost constants (match agent_02_transcription.py)
+_STT_COST_PER_MINUTE = 0.005
+# Rough LLM cost estimate per evaluation (~1500 input + ~800 output tokens)
+_LLM_COST_PER_EVAL_ESTIMATE = 0.003
+
+
+def _estimate_audio_duration(audio_path: Path) -> Optional[float]:
+    """Estimate audio duration in minutes using pydub (best-effort)."""
+    try:
+        from pydub import AudioSegment
+        audio = AudioSegment.from_file(str(audio_path))
+        return round(len(audio) / 1000 / 60, 2)
+    except Exception:
+        return None
+
+
+def _run_dry_run(args, config, logger):
+    """P4: Estimate pipeline costs without making any API calls.
+
+    Scans audio files, estimates STT and LLM costs, reports totals.
+    """
+    from agents.agent_01_audio import AudioFileFinder, CRMAgent
+
+    print(f"\n{'='*60}")
+    print(f"  DRY RUN — Cost Estimation (no API calls)")
+    print(f"{'='*60}\n")
+
+    audio_files = []
+
+    if args.local:
+        audio_files = [Path(f) for f in args.local if Path(f).exists()]
+    elif args.folder:
+        extensions = tuple(config.get("audio_extensions", [".mp3", ".wav", ".m4a"]))
+        finder = AudioFileFinder(folder_path=args.folder, extensions=extensions)
+        audio_files = finder.find_all()
+    elif args.date_from:
+        print("  NOTE: CRM dry-run cannot count files without API call.")
+        print("  Provide --folder or --local for accurate estimates.\n")
+        return
+
+    if not audio_files:
+        print("  No audio files found.")
+        return
+
+    # Check STT cache for potential hits
+    el_config = config.get("elevenlabs", {})
+    from inference.stt_cache import STTCache
+    stt_cache = STTCache(
+        cache_dir=el_config.get("stt_cache_dir", "data/stt_cache"),
+        enable=el_config.get("enable_stt_cache", True),
+        ttl_seconds=el_config.get("stt_cache_ttl_days", 30) * 24 * 3600,
+    )
+
+    total_duration = 0.0
+    cached_count = 0
+    uncached_count = 0
+
+    print(f"  {'File':<40} {'Duration':>8} {'Cached':>8} {'STT Cost':>10}")
+    print(f"  {'-'*40} {'-'*8} {'-'*8} {'-'*10}")
+
+    for audio_path in audio_files:
+        duration = _estimate_audio_duration(audio_path) or 0
+        total_duration += duration
+        dur_str = f"{duration:.1f} min" if duration else "N/A"
+
+        # Check if cached
+        cache_key = STTCache.cache_key(
+            audio_path,
+            model_id=el_config.get("model", "scribe_v2"),
+            diarize=el_config.get("diarize", True),
+            num_speakers=el_config.get("num_speakers"),
+            language_code=el_config.get("language_code"),
+        )
+        is_cached = stt_cache.load(cache_key) is not None
+        if is_cached:
+            cached_count += 1
+            stt_cost = 0.0
+        else:
+            uncached_count += 1
+            stt_cost = duration * _STT_COST_PER_MINUTE
+
+        print(f"  {audio_path.name:<40} {dur_str:>8} {'YES' if is_cached else 'NO':>8} "
+              f"${stt_cost:>9.4f}")
+
+    # Totals
+    uncached_duration = sum(
+        (_estimate_audio_duration(f) or 0) for f in audio_files
+    ) - sum(
+        (_estimate_audio_duration(f) or 0) for f in audio_files
+        if stt_cache.load(STTCache.cache_key(
+            f,
+            model_id=el_config.get("model", "scribe_v2"),
+            diarize=el_config.get("diarize", True),
+            num_speakers=el_config.get("num_speakers"),
+            language_code=el_config.get("language_code"),
+        )) is not None
+    )
+
+    stt_total = uncached_duration * _STT_COST_PER_MINUTE
+    llm_total = len(audio_files) * _LLM_COST_PER_EVAL_ESTIMATE
+    grand_total = stt_total + llm_total
+
+    print(f"\n  {'Summary':}")
+    print(f"    Files:              {len(audio_files)}")
+    print(f"    Total duration:     {total_duration:.1f} min")
+    print(f"    Cached (skip STT):  {cached_count}")
+    print(f"    Need STT API:       {uncached_count}")
+    print(f"    Est. STT cost:      ${stt_total:.4f}")
+    print(f"    Est. LLM cost:      ${llm_total:.4f}")
+    print(f"    Est. total cost:    ${grand_total:.4f}")
+
+    if args.budget and args.budget > 0:
+        if grand_total > args.budget:
+            print(f"\n    ⚠ OVER BUDGET: ${grand_total:.4f} > ${args.budget:.2f}")
+        else:
+            print(f"\n    Within budget: ${grand_total:.4f} / ${args.budget:.2f}")
+
+    print()
+
 
 def main():
     parser = argparse.ArgumentParser(description="Call Center QA System")
@@ -34,6 +154,10 @@ def main():
     parser.add_argument('--agent-id', type=int, help='Filter by agent ID (CRM mode)')
     parser.add_argument('--check', action='store_true', help='Health check: validate env, config, exit 0')
     parser.add_argument('--force', action='store_true', help='Force re-run even if lock file exists (#25)')
+    parser.add_argument('--budget', type=float, default=0.0,
+                        help='Max budget in USD (0 = unlimited). Pipeline stops when exceeded.')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Estimate costs without making API calls')
     args = parser.parse_args()
 
     # Load environment and config
@@ -80,6 +204,15 @@ def main():
     except OSError as e:
         logger.warning(f"Could not create lock file: {e}")
 
+    # ── P4: Dry-run mode — estimate costs without API calls ──────
+    if args.dry_run:
+        _run_dry_run(args, config, logger)
+        try:
+            lock_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+        sys.exit(0)
+
     # Initialize Agent 2: ElevenLabs STT (Scribe v2 with diarization)
     from elevenlabs import ElevenLabs
     el_config = config.get("elevenlabs", {})
@@ -96,6 +229,9 @@ def main():
         language_code=el_config.get("language_code"),
         keyterms=el_config.get("keyterms", []),
         delay_between_calls=el_config.get("delay_between_calls", 0.5),
+        stt_cache_dir=el_config.get("stt_cache_dir", "data/stt_cache"),
+        enable_stt_cache=el_config.get("enable_stt_cache", True),
+        stt_cache_ttl_days=el_config.get("stt_cache_ttl_days", 30),
     )
 
     # Initialize Agent 3: QualityManagement (with ModelFactory fallback)
@@ -114,7 +250,8 @@ def main():
     if args.local:
         audio_files = [Path(f) for f in args.local]
         agent_finder = AudioFileFinder(folder_path=".")
-        pipeline = Pipeline(agent_finder, agent_stt, agent_qm, agent_integration)
+        pipeline = Pipeline(agent_finder, agent_stt, agent_qm, agent_integration,
+                            max_budget_usd=args.budget)
         results = pipeline.run_local(audio_files)
 
     # Mode: Local folder
@@ -134,7 +271,8 @@ def main():
             dur_str = f"{duration:.1f} min" if duration else "N/A"
             print(f"  {info['name']} | {info['size_mb']:.1f} MB | {dur_str}")
 
-        pipeline = Pipeline(agent_finder, agent_stt, agent_qm, agent_integration)
+        pipeline = Pipeline(agent_finder, agent_stt, agent_qm, agent_integration,
+                            max_budget_usd=args.budget)
         results = pipeline.run_local(audio_files)
 
     # Mode: CRM API
@@ -148,7 +286,8 @@ def main():
             agent_id=args.agent_id,
         )
 
-        pipeline = Pipeline(agent_audio, agent_stt, agent_qm, agent_integration)
+        pipeline = Pipeline(agent_audio, agent_stt, agent_qm, agent_integration,
+                            max_budget_usd=args.budget)
         results = pipeline.run(args.date_from, args.date_to)
 
     else:

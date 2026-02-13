@@ -15,6 +15,8 @@ from typing import Dict, List, Optional
 import time
 import logging
 
+from inference.stt_cache import STTCache
+
 logger = logging.getLogger("qa_system.agents")
 
 CREDITS_PER_MINUTE = 280
@@ -70,6 +72,9 @@ class ElevenLabsSTTAgent:
         language_code: Optional[str] = None,
         keyterms: Optional[List[str]] = None,
         delay_between_calls: float = 0.5,
+        stt_cache_dir: Optional[str] = "data/stt_cache",
+        enable_stt_cache: bool = True,
+        stt_cache_ttl_days: int = 30,
     ):
         """
         Initialize with ElevenLabs client.
@@ -87,6 +92,9 @@ class ElevenLabsSTTAgent:
             language_code: ISO language code (None = auto-detect).
             keyterms: Domain-specific terms to boost recognition accuracy.
             delay_between_calls: Seconds to wait between consecutive API calls (#6).
+            stt_cache_dir: Directory for STT transcript cache (None = disabled).
+            enable_stt_cache: Enable/disable STT transcript caching.
+            stt_cache_ttl_days: Days to keep cached transcripts before expiry.
         """
         self.client = client
         self.persist_transcripts = persist_transcripts
@@ -100,12 +108,25 @@ class ElevenLabsSTTAgent:
         self.language_code = language_code
         self.keyterms = keyterms or []
         self.delay_between_calls = delay_between_calls
+
+        # STT transcript cache
+        self._stt_cache = STTCache(
+            cache_dir=stt_cache_dir or "data/stt_cache",
+            enable=enable_stt_cache and stt_cache_dir is not None,
+            ttl_seconds=stt_cache_ttl_days * 24 * 3600,
+        )
+
         if self.persist_transcripts:
             self.transcripts_folder.mkdir(parents=True, exist_ok=True)
         logger.info(
             f"ElevenLabsSTTAgent initialized | Model: {self.model_id} | "
-            f"diarize={self.diarize}"
+            f"diarize={self.diarize} | stt_cache={'ON' if self._stt_cache.enabled else 'OFF'}"
         )
+
+    @property
+    def stt_cache(self) -> STTCache:
+        """Expose STT cache for stats and management."""
+        return self._stt_cache
 
     @staticmethod
     def validate_audio_file(audio_path: Path) -> None:
@@ -350,6 +371,38 @@ class ElevenLabsSTTAgent:
             estimated_credits = int(duration * CREDITS_PER_MINUTE) if duration else 0
             estimated_cost = duration * COST_PER_MINUTE if duration else 0
 
+            # ── STT Cache check ──────────────────────────────────────
+            cache_key = STTCache.cache_key(
+                audio_path,
+                model_id=self.model_id,
+                diarize=self.diarize,
+                num_speakers=self.num_speakers,
+                language_code=self.language_code,
+            )
+            cached = self._stt_cache.load(cache_key)
+            if cached is not None:
+                transcript_text = cached["text"]
+                # Persist transcript to disk (even from cache)
+                saved_path = self._save_transcript(filename, transcript_text)
+                transcripts[filename] = {
+                    "path": audio_path,
+                    "transcript": transcript_text,
+                    "raw_text": cached.get("raw_text", transcript_text),
+                    "speakers_detected": cached.get("speakers_detected", 0),
+                    "diarized": cached.get("diarized", False),
+                    "language_code": cached.get("language_code"),
+                    "duration": duration,
+                    "process_time": 0.0,
+                    "credits_used": 0,
+                    "cost_usd": 0.0,
+                    "status": "Success",
+                    "cached": True,
+                    "transcript_path": str(saved_path) if saved_path else None,
+                }
+                logger.info(f"  CACHED: {filename} (skipped API call, saved ${estimated_cost:.4f})")
+                continue
+            # ── End cache check ──────────────────────────────────────
+
             start = time.time()
             try:
                 result = self.transcribe(audio_path)
@@ -360,6 +413,16 @@ class ElevenLabsSTTAgent:
 
                 # Persist transcript to disk
                 saved_path = self._save_transcript(filename, transcript_text)
+
+                # ── Save to STT cache ────────────────────────────────
+                self._stt_cache.save(cache_key, {
+                    "text": transcript_text,
+                    "raw_text": result.get("raw_text", transcript_text),
+                    "speakers_detected": result.get("speakers_detected", 0),
+                    "diarized": result.get("diarized", False),
+                    "language_code": result.get("language_code"),
+                })
+                # ── End cache save ───────────────────────────────────
 
                 transcripts[filename] = {
                     "path": audio_path,
@@ -373,6 +436,7 @@ class ElevenLabsSTTAgent:
                     "credits_used": estimated_credits,
                     "cost_usd": round(estimated_cost, 4),
                     "status": "Success",
+                    "cached": False,
                     "transcript_path": str(saved_path) if saved_path else None,
                 }
                 logger.info(f"  OK: {filename} ({duration or 0:.1f} min, {elapsed:.1f}s)")
@@ -405,7 +469,14 @@ class ElevenLabsSTTAgent:
         # Summary
         success = sum(1 for v in transcripts.values() if v["status"] == "Success")
         total_cost = sum(v.get("cost_usd", 0) for v in transcripts.values())
-        print(f"\n  Transcription complete: {success}/{total} files | Cost: ${total_cost:.4f}")
+        cached_count = sum(1 for v in transcripts.values() if v.get("cached"))
+        api_count = success - cached_count
+        cache_savings = sum(
+            (v.get("duration", 0) or 0) * COST_PER_MINUTE
+            for v in transcripts.values() if v.get("cached")
+        )
+        cache_status = f" | Cache: {cached_count} hits, {api_count} API calls, saved ${cache_savings:.4f}" if cached_count else ""
+        print(f"\n  Transcription complete: {success}/{total} files | Cost: ${total_cost:.4f}{cache_status}")
 
         return transcripts
 

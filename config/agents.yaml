@@ -22,6 +22,9 @@ elevenlabs:
   language_code: null            # null = auto-detect language
   keyterms: []                  # Domain-specific terms to boost recognition
   delay_between_calls: 0.5     # Seconds between consecutive STT API calls (#6)
+  stt_cache_dir: "data/stt_cache"   # Directory for STT transcript cache
+  enable_stt_cache: true            # Enable/disable STT caching
+  stt_cache_ttl_days: 30            # Days to keep cached transcripts
 
 # #10: LLM model config is in config/models.yaml — not duplicated here
 
@@ -32,6 +35,7 @@ integration:
 
 pipeline:
   max_consecutive_failures: 3  # Circuit breaker: stop after N consecutive LLM failures
+  max_budget_usd: 0            # 0 = unlimited; set to e.g. 5.00 for $5 hard cap
 
 audio_extensions:
   - ".mp3"

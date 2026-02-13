@@ -15,6 +15,7 @@ import tempfile
 import time
 import logging
 import threading
+from collections import OrderedDict
 from datetime import datetime, date
 from decimal import Decimal
 from pathlib import Path
@@ -96,6 +97,7 @@ class InferenceEngine:
         cache_dir: Optional[str] = "data/cache",
         enable_cache: bool = True,
         cache_ttl_seconds: int = 7 * 24 * 3600,  # MED-20: 7-day default TTL
+        memory_cache_maxsize: int = 128,  # L1 in-memory LRU cache size
     ):
         self._factory = model_factory
         self._prompts = prompt_loader or PromptLoader()
@@ -103,6 +105,15 @@ class InferenceEngine:
         self._enable_cache = enable_cache and self._cache_dir is not None
         self._cache_ttl = cache_ttl_seconds
         self._cache_lock = threading.Lock()  # CRIT-4: Thread-safe cache access
+
+        # L1: In-memory LRU cache (OrderedDict, moves to end on access)
+        self._memory_cache: OrderedDict[str, Dict] = OrderedDict()
+        self._memory_cache_maxsize = max(1, memory_cache_maxsize)
+        self._memory_hits = 0
+        self._memory_misses = 0
+        self._disk_hits = 0
+        self._disk_misses = 0
+
         if self._enable_cache and self._cache_dir is not None:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
             self._cleanup_cache()  # MED-20: Remove stale entries at startup
@@ -134,6 +145,35 @@ class InferenceEngine:
                 pass
         if removed:
             logger.info(f"Cache cleanup: removed {removed} stale entries")
+
+    @property
+    def cache_stats(self) -> Dict:
+        """Return combined L1 (memory) + L2 (disk) cache statistics."""
+        total_lookups = self._memory_hits + self._memory_misses
+        return {
+            "memory_hits": self._memory_hits,
+            "memory_misses": self._memory_misses,
+            "disk_hits": self._disk_hits,
+            "disk_misses": self._disk_misses,
+            "total_lookups": total_lookups,
+            "combined_hit_rate_pct": round(
+                (self._memory_hits + self._disk_hits) / max(1, total_lookups) * 100, 1
+            ),
+            "memory_cache_size": len(self._memory_cache),
+            "memory_cache_maxsize": self._memory_cache_maxsize,
+        }
+
+    def _promote_to_memory(self, key: str, data: Dict) -> None:
+        """Promote a disk cache entry to the in-memory LRU cache.
+
+        Evicts the oldest entry if the cache exceeds maxsize.
+        """
+        if key in self._memory_cache:
+            self._memory_cache.move_to_end(key)
+            return
+        self._memory_cache[key] = data
+        while len(self._memory_cache) > self._memory_cache_maxsize:
+            self._memory_cache.popitem(last=False)  # Evict oldest
 
     def evaluate(
         self,
@@ -203,10 +243,23 @@ class InferenceEngine:
             prompt_hash=prompt_hash,
         )
         if self._enable_cache:
+            # L1: Check in-memory LRU cache first
+            if cache_key in self._memory_cache:
+                self._memory_cache.move_to_end(cache_key)
+                self._memory_hits += 1
+                logger.info(f"L1 memory cache hit for {call_type} evaluation (key={cache_key[:12]})")
+                return self._memory_cache[cache_key]
+            self._memory_misses += 1
+
+            # L2: Check disk cache
             cached = self._load_cache(cache_key)
             if cached:
-                logger.info(f"Cache hit for {call_type} evaluation (key={cache_key[:12]})")
+                self._disk_hits += 1
+                # Promote to L1 for faster future lookups
+                self._promote_to_memory(cache_key, cached)
+                logger.info(f"L2 disk cache hit for {call_type} evaluation (key={cache_key[:12]})")
                 return cached
+            self._disk_misses += 1
 
         # Retry loop
         parser = ResponseParser(expected_keys=expected_keys)
@@ -241,6 +294,8 @@ class InferenceEngine:
                 # Cache the result — only if it has no error key (HIGH-NEW-7)
                 if self._enable_cache and "error" not in evaluation:
                     self._save_cache(cache_key, evaluation)
+                    # Also promote to L1 memory cache
+                    self._promote_to_memory(cache_key, evaluation)
 
                 logger.info(
                     f"Evaluation complete | {call_type} | {criteria_count} criteria | "
