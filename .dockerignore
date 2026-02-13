@@ -16,9 +16,8 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Documentation, tests, data
+# Documentation and data (tests/ is needed by the 'test' stage)
 README.md
-tests/
 data/
 *.log
 

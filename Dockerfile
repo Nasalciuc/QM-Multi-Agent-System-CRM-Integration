@@ -3,6 +3,7 @@
 # Production image runs as non-root user with minimal attack surface
 
 # ── Stage 1: Base with dependencies ─────────────────────────────────
+# Python 3.11 matches local development environment (.venv)
 FROM python:3.11-slim AS base
 
 # Install ffmpeg (required by pydub for audio duration detection)

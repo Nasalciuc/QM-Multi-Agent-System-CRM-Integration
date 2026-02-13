@@ -171,13 +171,13 @@ class TestJsonSerializer:
     def test_serializes_path(self):
         result = _json_serializer(Path("/app/data/file.txt"))
         # Path.__str__ uses OS-native separators; serializer uses str()
-        assert "file.txt" in result
+        assert isinstance(result, str) and "file.txt" in result
 
     def test_serializes_datetime(self):
         from datetime import datetime
         dt = datetime(2026, 2, 12, 10, 30, 0)
         result = _json_serializer(dt)
-        assert "2026-02-12" in result
+        assert isinstance(result, str) and "2026-02-12" in result
 
     def test_serializes_set(self):
         result = _json_serializer({"b", "a", "c"})
