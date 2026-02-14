@@ -131,10 +131,20 @@ class QualityManagementAgent:
         call_type = "Follow-up Call" if is_followup else "First Call"
         return is_followup, call_type
 
-    def evaluate_call(self, transcript: str, filename: str, max_retries: int = 2) -> Dict:
+    def evaluate_call(self, transcript: str, filename: str, max_retries: int = 2,
+                      metadata: Optional[Dict] = None) -> Dict:
         """Evaluate a call transcript against all applicable criteria.
 
         Pipeline: validate → clean → redact PII → truncate → call LLM → parse → validate.
+
+        Args:
+            transcript: Raw transcript text.
+            filename: Audio filename for call-type detection.
+            max_retries: Max LLM retry attempts.
+            metadata: Optional CRM record dict. MED-11: If it contains a
+                      ``direction`` key ("inbound" or "outbound"), a per-call
+                      TranscriptCleaner is created with the correct direction
+                      so that Speaker 0/1 labels map to Agent/Client properly.
 
         Returns evaluation dict with criteria scores, evidence, assessment.
         """
@@ -145,7 +155,7 @@ class QualityManagementAgent:
                 f"Transcript too short for {filename}: {word_count} words "
                 f"(min {self.MIN_TRANSCRIPT_WORDS}). Skipping LLM call."
             )
-            _, call_type = self.detect_call_type(filename)
+            _, call_type = self.detect_call_type(filename, metadata)
             return {
                 "error": f"Transcript too short ({word_count} words)",
                 "status": "TOO_SHORT",
@@ -158,10 +168,17 @@ class QualityManagementAgent:
                 "critical_gaps": [],
             }
 
-        is_followup, call_type = self.detect_call_type(filename)
+        is_followup, call_type = self.detect_call_type(filename, metadata)
 
         # 1. Clean transcript (normalize speaker labels)
-        cleaned = self._cleaner.clean(transcript)
+        # MED-11: Use direction from CRM metadata when available
+        direction = (metadata or {}).get("direction", "").lower()
+        if direction in TranscriptCleaner._VALID_DIRECTIONS and direction != self._cleaner.direction:
+            cleaner = TranscriptCleaner(direction=direction)
+            logger.debug(f"Using per-call direction '{direction}' for {filename}")
+        else:
+            cleaner = self._cleaner
+        cleaned = cleaner.clean(transcript)
 
         # 2. Redact PII
         redaction = self._redactor.redact(cleaned)

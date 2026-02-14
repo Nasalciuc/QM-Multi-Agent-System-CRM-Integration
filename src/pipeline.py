@@ -15,6 +15,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import shutil
 import signal
+import threading
 import time
 import logging
 
@@ -22,26 +23,32 @@ logger = logging.getLogger("qa_system.pipeline")
 
 
 class _GracefulShutdown:
-    """MED-3: Handle SIGINT/SIGTERM for graceful shutdown.
+    """MED-3 / HIGH-9: Handle SIGINT/SIGTERM for graceful shutdown.
 
+    HIGH-9: Converted from class-level state to instance with threading.Event
+    for thread-safe signalling and cleaner state management.
     MED-NEW-15: reset() is called at pipeline start so stale state
     from a previous run in the same process does not carry over.
     """
-    _triggered = False
 
-    @classmethod
-    def trigger(cls, signum, frame):
-        cls._triggered = True
+    def __init__(self):
+        self._event = threading.Event()
+
+    def trigger(self, signum=None, frame=None):
+        """Signal handler callback — sets the shutdown event."""
+        self._event.set()
         logger.warning(f"Shutdown signal received ({signum}). Finishing current evaluation...")
 
-    @classmethod
-    def is_triggered(cls) -> bool:
-        return cls._triggered
+    def is_triggered(self) -> bool:
+        return self._event.is_set()
 
-    @classmethod
-    def reset(cls):
+    def reset(self):
         """Reset shutdown flag — MUST be called at pipeline start."""
-        cls._triggered = False
+        self._event.clear()
+
+    def wait(self, timeout: float) -> bool:
+        """Wait up to timeout seconds. Returns True if shutdown was triggered."""
+        return self._event.wait(timeout)
 
 
 class Pipeline:
@@ -91,12 +98,16 @@ class Pipeline:
         self._max_workers = max(1, max_workers)  # HIGH-NEW-8: concurrency level
         self._max_budget_usd = max_budget_usd  # P3: Hard budget limit
         self._budget_80_warned = False  # P3: 80% budget warning flag
+        self._stt_cost = 0.0  # CRIT-4: Initialize STT cost for budget correctness
+
+        # HIGH-9: Instance-based graceful shutdown with threading.Event
+        self._shutdown = _GracefulShutdown()
 
         # CRIT-1: Register signal handlers, save old ones so we can restore later
-        self._old_sigint = signal.signal(signal.SIGINT, _GracefulShutdown.trigger)
+        self._old_sigint = signal.signal(signal.SIGINT, self._shutdown.trigger)
         self._old_sigterm = None
         if hasattr(signal, 'SIGTERM'):
-            self._old_sigterm = signal.signal(signal.SIGTERM, _GracefulShutdown.trigger)
+            self._old_sigterm = signal.signal(signal.SIGTERM, self._shutdown.trigger)
 
     def _restore_signals(self) -> None:
         """Restore original signal handlers saved during __init__."""
@@ -105,13 +116,13 @@ class Pipeline:
         if self._old_sigterm is not None and hasattr(signal, 'SIGTERM'):
             signal.signal(signal.SIGTERM, self._old_sigterm)
 
-    @staticmethod
-    def _interruptible_sleep(seconds: float, granularity: float = 0.25) -> None:
+    def _interruptible_sleep(self, seconds: float, granularity: float = 0.25) -> None:
         """MED-NEW-11: Sleep in small increments so shutdown signals
         are noticed promptly instead of blocking for the full duration.
+        HIGH-9: Uses instance _shutdown.wait() for thread-safe signalling.
         """
         remaining = seconds
-        while remaining > 0 and not _GracefulShutdown.is_triggered():
+        while remaining > 0 and not self._shutdown.is_triggered():
             time.sleep(min(granularity, remaining))
             remaining -= granularity
 
@@ -134,50 +145,44 @@ class Pipeline:
     def run(self, date_from: str, date_to: Optional[str] = None) -> List[Dict]:
         """Full pipeline: Audio source -> ElevenLabs -> QA -> Export"""
 
-        print(f"\n{'='*60}")
-        print(f"  QA Pipeline: CRM Mode")
-        print(f"  Period: {date_from} to {date_to or 'now'}")
-        print(f"{'='*60}\n")
+        logger.info(f"QA Pipeline: CRM Mode | Period: {date_from} to {date_to or 'now'}")
 
         pipeline_start = time.time()
-        _GracefulShutdown.reset()  # MED-NEW-15: Clear stale shutdown state
+        self._shutdown.reset()  # MED-NEW-15: Clear stale shutdown state
 
         # Step 1: Download recordings
-        print(f"STEP 1: Downloading recordings from CRM...")
+        logger.info("STEP 1: Downloading recordings from CRM...")
         calls = self.audio_agent.search_and_download(date_from, date_to)
         audio_files = [Path(c["local_audio_path"]) for c in calls if c.get("local_audio_path")]
-        print(f"  -> {len(audio_files)} audio files ready\n")
+        logger.info(f"STEP 1 complete: {len(audio_files)} audio files ready")
 
         if not audio_files:
-            print("  No recordings found. Pipeline complete.")
+            logger.info("No recordings found. Pipeline complete.")
             return []
 
         # Steps 2-4: Process audio files
         evaluations = self._process_audio_files(audio_files)
 
         elapsed = time.time() - pipeline_start
-        print(f"\nPipeline complete in {elapsed:.1f}s")
+        logger.info(f"Pipeline complete in {elapsed:.1f}s")
 
         return evaluations
 
     def run_local(self, audio_files: List[Path]) -> List[Dict]:
         """Pipeline from local files (skip CRM download)."""
-        print(f"\n{'='*60}")
-        print(f"  QA Pipeline: Local Mode")
-        print(f"  Files: {len(audio_files)}")
-        print(f"{'='*60}\n")
+        logger.info(f"QA Pipeline: Local Mode | Files: {len(audio_files)}")
 
         pipeline_start = time.time()
-        _GracefulShutdown.reset()  # MED-NEW-15: Clear stale shutdown state
+        self._shutdown.reset()  # MED-NEW-15: Clear stale shutdown state
 
         if not audio_files:
-            print("  No audio files provided. Pipeline complete.")
+            logger.info("No audio files provided. Pipeline complete.")
             return []
 
         evaluations = self._process_audio_files(audio_files)
 
         elapsed = time.time() - pipeline_start
-        print(f"\nPipeline complete in {elapsed:.1f}s")
+        logger.info(f"Pipeline complete in {elapsed:.1f}s")
 
         return evaluations
 
@@ -188,16 +193,16 @@ class Pipeline:
         self._check_disk_space()
 
         # Step 2: Transcribe with ElevenLabs
-        print("STEP 2: Transcribing with ElevenLabs Scribe v2...")
+        logger.info("STEP 2: Transcribing with ElevenLabs Scribe v2...")
         transcripts = self.stt_agent.transcribe_batch(audio_files)
         success_count = sum(1 for v in transcripts.values() if v.get("status") == "Success")
         # MED-8: Aggregate STT costs
         self._stt_cost = sum(v.get("cost_usd", 0) for v in transcripts.values())
         self._transcripts = transcripts  # Store for summary access
-        print(f"  -> {success_count} transcripts ready\n")
+        logger.info(f"STEP 2 complete: {success_count} transcripts ready")
 
         # Step 3: Evaluate with QA Agent
-        print("STEP 3: Evaluating with QualityManagementAgent...")
+        logger.info("STEP 3: Evaluating with QualityManagementAgent...")
         evaluations = []
         eval_count = 0
         consecutive_failures = 0
@@ -207,12 +212,11 @@ class Pipeline:
                 continue
 
             eval_count += 1
-            print(f"  Evaluating {eval_count}: {filename}...", end="\r")
+            logger.info(f"Evaluating {eval_count}: {filename}...")
 
             # MED-3: Check for graceful shutdown signal
-            if _GracefulShutdown.is_triggered():
+            if self._shutdown.is_triggered():
                 logger.warning("Graceful shutdown: stopping evaluation loop.")
-                print(f"\n  STOPPED: Shutdown signal received.")
                 break
 
             # HIGH-2: Rate limiting between LLM calls
@@ -220,9 +224,8 @@ class Pipeline:
             # are honoured during the delay window.
             if eval_count > 1 and self.delay_between_evaluations > 0:
                 self._interruptible_sleep(self.delay_between_evaluations)
-                if _GracefulShutdown.is_triggered():
+                if self._shutdown.is_triggered():
                     logger.warning("Graceful shutdown during rate-limit delay.")
-                    print(f"\n  STOPPED: Shutdown signal received during delay.")
                     break
 
             evaluation = self.qa_agent.evaluate_call(data["transcript"], filename)
@@ -235,7 +238,6 @@ class Pipeline:
                 if consecutive_failures >= self.max_consecutive_failures:
                     logger.error(f"Circuit breaker triggered: {consecutive_failures} consecutive failures. "
                                  f"Stopping evaluations.")
-                    print(f"\n  STOPPED: {consecutive_failures} consecutive failures (API may be down)")
                     # HIGH-3: Flag incomplete results
                     remaining = sum(1 for fn, d in transcripts.items()
                                     if d.get("status") == "Success" and fn not in
@@ -264,7 +266,7 @@ class Pipeline:
             self.total_cost += cost
 
             # P3: Hard budget enforcement — stop when exceeded
-            combined_cost = self.total_cost + getattr(self, '_stt_cost', 0)
+            combined_cost = self.total_cost + self._stt_cost
             if self._max_budget_usd > 0:
                 # 80% warning
                 if (combined_cost >= self._max_budget_usd * 0.8
@@ -274,16 +276,12 @@ class Pipeline:
                         f"Budget 80% warning: ${combined_cost:.4f} / "
                         f"${self._max_budget_usd:.2f}"
                     )
-                    print(f"\n  ⚠ BUDGET 80%: ${combined_cost:.4f} / "
-                          f"${self._max_budget_usd:.2f}")
                 # Hard stop at 100%
                 if combined_cost >= self._max_budget_usd:
                     logger.error(
                         f"Budget exceeded: ${combined_cost:.4f} >= "
                         f"${self._max_budget_usd:.2f}. Stopping."
                     )
-                    print(f"\n  STOPPED: Budget exceeded "
-                          f"(${combined_cost:.4f} >= ${self._max_budget_usd:.2f})")
                     break
 
             # Cost budget guard: warn when cumulative cost exceeds threshold
@@ -295,8 +293,6 @@ class Pipeline:
                     f"Cost budget warning: cumulative LLM cost ${self.total_cost:.4f} "
                     f"exceeds threshold ${self.cost_warning_threshold_usd:.2f}"
                 )
-                print(f"\n  WARNING: Cumulative cost ${self.total_cost:.4f} "
-                      f"exceeds threshold ${self.cost_warning_threshold_usd:.2f}")
 
             # HIGH-12: Track which providers were used
             provider = evaluation.get("provider_used", evaluation.get("model_used", "unknown"))
@@ -320,19 +316,19 @@ class Pipeline:
                 "status": "Success" if "error" not in evaluation else evaluation["error"]
             })
 
-        print(f"\n  -> {len(evaluations)} evaluations complete\n")
+        logger.info(f"STEP 3 complete: {len(evaluations)} evaluations")
 
         if not evaluations:
-            print("  No evaluations to export.")
+            logger.info("No evaluations to export.")
             return evaluations
 
         # HIGH-3/10: Filter out circuit breaker sentinel rows before export
         exportable = [e for e in evaluations if e.get("status") != "CIRCUIT_BREAKER_TRIGGERED"]
 
         # Step 4: Export results
-        print("STEP 4: Exporting results...")
+        logger.info("STEP 4: Exporting results...")
         if not exportable:
-            print("  No valid evaluations to export (all circuit-breaker).")
+            logger.info("No valid evaluations to export (all circuit-breaker).")
             return evaluations
         files = self.integration_agent.export_all(exportable, self.qa_agent.EVALUATION_CRITERIA)
 
@@ -342,19 +338,22 @@ class Pipeline:
         return evaluations
 
     def print_summary(self, evaluations: List[Dict]) -> None:
-        """Print comprehensive evaluation summary with cost & cache breakdown."""
+        """Print comprehensive evaluation summary with cost & cache breakdown.
+
+        HIGH-7: Uses logger.info instead of print for structured output.
+        """
         if not evaluations:
-            print("No evaluations to summarize.")
+            logger.info("No evaluations to summarize.")
             return
 
         scores = [e["overall_score"] for e in evaluations if "overall_score" in e]
         if not scores:
-            print("No scored evaluations to summarize.")
+            logger.info("No scored evaluations to summarize.")
             return
 
         avg_score = sum(scores) / len(scores)
         llm_cost = sum(e.get("cost_usd", 0) for e in evaluations)
-        stt_cost = getattr(self, '_stt_cost', 0)
+        stt_cost = self._stt_cost
         combined_cost = llm_cost + stt_cost
 
         # Token utilization
@@ -365,26 +364,24 @@ class Pipeline:
             e.get("tokens_used", {}).get("output", 0) for e in evaluations
         )
 
-        print(f"\n{'='*70}")
-        print(f"  PIPELINE SUMMARY")
-        print(f"{'='*70}")
-
-        # ── Quality Scores ───────────────────────────────────────────
-        print(f"\n  Quality Scores:")
-        print(f"    Calls evaluated:  {len(scores)}")
-        print(f"    Average score:    {avg_score:.1f}/100")
-        print(f"    Best score:       {max(scores):.1f}/100")
-        print(f"    Worst score:      {min(scores):.1f}/100")
+        # Build summary lines for a single structured log message
+        std_dev_line = ""
         if len(scores) > 1:
             std_dev = (sum((s - avg_score) ** 2 for s in scores) / len(scores)) ** 0.5
-            print(f"    Std deviation:    {std_dev:.1f}")
+            std_dev_line = f" | StdDev: {std_dev:.1f}"
+
+        logger.info(
+            f"PIPELINE SUMMARY | Evaluated: {len(scores)} | "
+            f"Avg: {avg_score:.1f}/100 | Best: {max(scores):.1f} | "
+            f"Worst: {min(scores):.1f}{std_dev_line}"
+        )
 
         # ── Cost Breakdown ───────────────────────────────────────────
-        print(f"\n  Cost Breakdown:")
-        print(f"    LLM (eval):       ${llm_cost:.4f}")
-        if stt_cost > 0:
-            print(f"    STT (transcribe): ${stt_cost:.4f}")
-        print(f"    Total:            ${combined_cost:.4f}")
+        stt_part = f" | STT: ${stt_cost:.4f}" if stt_cost > 0 else ""
+        logger.info(
+            f"Cost breakdown | LLM: ${llm_cost:.4f}{stt_part} | "
+            f"Total: ${combined_cost:.4f}"
+        )
 
         # STT cache savings
         stt_cache_stats = {}
@@ -396,37 +393,37 @@ class Pipeline:
             except Exception:
                 pass
         if stt_cache_stats.get("hits", 0) > 0:
-            # Estimate saved cost from cached transcriptions
             cached_savings = sum(
                 (v.get("duration", 0) or 0) * 0.005
                 for v in getattr(self, '_transcripts', {}).values()
                 if v.get("cached")
             )
-            print(f"    STT cache saved:  ${cached_savings:.4f}")
+            logger.info(f"STT cache saved: ${cached_savings:.4f}")
 
         # Budget status
         if self._max_budget_usd > 0:
             remaining = self._max_budget_usd - combined_cost
             pct_used = combined_cost / self._max_budget_usd * 100
-            print(f"\n  Budget Status:")
-            print(f"    Budget:           ${self._max_budget_usd:.2f}")
-            print(f"    Used:             ${combined_cost:.4f} ({pct_used:.1f}%)")
-            print(f"    Remaining:        ${remaining:.4f}")
+            logger.info(
+                f"Budget status | Budget: ${self._max_budget_usd:.2f} | "
+                f"Used: ${combined_cost:.4f} ({pct_used:.1f}%) | "
+                f"Remaining: ${remaining:.4f}"
+            )
 
         # ── Token Utilization ────────────────────────────────────────
-        print(f"\n  Token Utilization:")
-        print(f"    Input tokens:     {total_input_tokens:,}")
-        print(f"    Output tokens:    {total_output_tokens:,}")
-        print(f"    Total tokens:     {total_input_tokens + total_output_tokens:,}")
+        logger.info(
+            f"Token utilization | Input: {total_input_tokens:,} | "
+            f"Output: {total_output_tokens:,} | "
+            f"Total: {total_input_tokens + total_output_tokens:,}"
+        )
 
         # ── Cache Performance ────────────────────────────────────────
-        print(f"\n  Cache Performance:")
-
-        # STT cache
         if stt_cache_stats:
-            print(f"    STT cache:        {stt_cache_stats['hits']} hits / "
-                  f"{stt_cache_stats['total_lookups']} lookups "
-                  f"({stt_cache_stats['hit_rate_pct']}%)")
+            logger.info(
+                f"STT cache: {stt_cache_stats['hits']} hits / "
+                f"{stt_cache_stats['total_lookups']} lookups "
+                f"({stt_cache_stats['hit_rate_pct']}%)"
+            )
 
         # LLM cache
         llm_stats = {}
@@ -438,26 +435,24 @@ class Pipeline:
             except Exception:
                 pass
         if llm_stats:
-            print(f"    LLM L1 (memory):  {llm_stats['memory_hits']} hits "
-                  f"({llm_stats['memory_cache_size']}/{llm_stats['memory_cache_maxsize']} slots)")
-            print(f"    LLM L2 (disk):    {llm_stats['disk_hits']} hits "
-                  f"({llm_stats['combined_hit_rate_pct']}% combined)")
+            logger.info(
+                f"LLM cache | L1: {llm_stats['memory_hits']} hits "
+                f"({llm_stats['memory_cache_size']}/{llm_stats['memory_cache_maxsize']} slots) | "
+                f"L2: {llm_stats['disk_hits']} hits "
+                f"({llm_stats['combined_hit_rate_pct']}% combined)"
+            )
 
         # ── Providers Used ───────────────────────────────────────────
         if self._providers_used:
-            print(f"\n  Providers:          {', '.join(sorted(self._providers_used))}")
+            logger.info(f"Providers used: {', '.join(sorted(self._providers_used))}")
             if len(self._providers_used) > 1:
                 logger.warning(f"Multiple providers used (possible fallback): {self._providers_used}")
 
-        print(f"\n{'='*70}")
-
         # ── Per-File Table ───────────────────────────────────────────
-        print(f"\n  {'File':<40} {'Type':<15} {'Score':>6} {'Cost':>8}")
-        print(f"  {'-'*40} {'-'*15} {'-'*6} {'-'*8}")
         for e in evaluations:
             if "overall_score" not in e:
                 continue
-            cost_str = f"${e.get('cost_usd', 0):.4f}"
-            print(f"  {e['filename']:<40} {e['call_type']:<15} "
-                  f"{e['overall_score']:>5.1f} {cost_str:>8}")
-        print()
+            logger.info(
+                f"  {e['filename']} | {e.get('call_type', 'Unknown')} | "
+                f"Score: {e['overall_score']:.1f} | Cost: ${e.get('cost_usd', 0):.4f}"
+            )

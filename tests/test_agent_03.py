@@ -286,3 +286,51 @@ class TestListeningRatio:
         transcript = "Some random text without labels\nAnother line"
         result = agent.calculate_listening_ratio(transcript)
         assert result["total_words"] == 0
+
+
+# --- Tests: MED-11 — evaluate_call with direction metadata ---
+
+class TestEvaluateCallDirection:
+    """MED-11: TranscriptCleaner direction from metadata."""
+
+    def test_evaluate_call_accepts_metadata(self, agent):
+        """evaluate_call should accept optional metadata kwarg."""
+        import inspect
+        sig = inspect.signature(agent.evaluate_call)
+        assert "metadata" in sig.parameters
+
+    def test_evaluate_call_inbound_direction(self, agent):
+        """MED-11: When metadata contains direction='inbound',
+        the per-call TranscriptCleaner should use that direction."""
+        # Patch inference engine to avoid real LLM call
+        agent._engine.evaluate = MagicMock(return_value={
+            "criteria": {"greeting_prepared": {"score": "YES", "evidence": "OK"}},
+            "overall_assessment": "Good call",
+            "strengths": [], "improvements": [], "critical_gaps": [],
+            "call_type": "First Call", "model_used": "test", "provider_used": "test",
+            "tokens_used": {"input": 0, "output": 0}, "cost_usd": 0.0,
+            "eval_time_seconds": 0.1,
+        })
+
+        transcript = "Speaker 0: Hello I need help\nSpeaker 1: Sure thing"
+        result = agent.evaluate_call(
+            transcript, "call1.mp3",
+            metadata={"direction": "inbound"},
+        )
+        # Should succeed without error
+        assert "error" not in result or result.get("status") == "TOO_SHORT"
+
+    def test_evaluate_call_outbound_default(self, agent):
+        """Without metadata direction, default 'outbound' is used."""
+        agent._engine.evaluate = MagicMock(return_value={
+            "criteria": {"greeting_prepared": {"score": "YES", "evidence": "OK"}},
+            "overall_assessment": "Good", "strengths": [], "improvements": [],
+            "critical_gaps": [], "call_type": "First Call", "model_used": "test",
+            "provider_used": "test", "tokens_used": {"input": 0, "output": 0},
+            "cost_usd": 0.0, "eval_time_seconds": 0.1,
+        })
+
+        # A long enough transcript
+        transcript = "Speaker 0: " + " ".join(["hello"] * 30) + "\nSpeaker 1: hi there"
+        result = agent.evaluate_call(transcript, "call1.mp3")
+        assert "error" not in result

@@ -12,55 +12,23 @@ Exports:
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime, date
-from decimal import Decimal
 import hashlib
 import hmac
 import json
 import os
+import random
 import time
 import logging
 
 import pandas as pd
 import httpx
 
-# MED-NEW-13: Import numpy at module level (optional dep)
-try:
-    import numpy as np
-    _HAS_NUMPY = True
-except ImportError:
-    _HAS_NUMPY = False
+from utils import json_serializer as _json_serializer  # HIGH-6: shared serializer
 
 logger = logging.getLogger("qa_system.agents")
 
 
-def _json_serializer(obj):
-    """Explicit JSON serializer — replaces dangerous `default=str`.
-
-    CRIT-4: Only handles known types; raises TypeError for unexpected objects.
-    MED-21: Also handles numpy scalars, Decimal, and bytes.
-    MED-NEW-13: Imports moved to module level for cleanliness.
-    """
-    if isinstance(obj, Path):
-        return str(obj)
-    if isinstance(obj, (datetime, date)):
-        return obj.isoformat()
-    if isinstance(obj, set):
-        return sorted(obj)
-    # MED-21: numpy scalar → Python native
-    if _HAS_NUMPY:
-        if isinstance(obj, (np.integer,)):
-            return int(obj)
-        if isinstance(obj, (np.floating,)):
-            return float(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-    # MED-21: Decimal → float
-    if isinstance(obj, Decimal):
-        return float(obj)
-    # MED-21: bytes → utf-8 string
-    if isinstance(obj, bytes):
-        return obj.decode("utf-8", errors="replace")
-    raise TypeError(f"Non-serializable object: {type(obj).__name__}")
+# HIGH-6: _json_serializer removed — now imported from utils
 
 
 class IntegrationAgent:
@@ -193,7 +161,7 @@ class IntegrationAgent:
                 "files": safe_files
             })
 
-        print(f"\n  Exported: {excel_path}")
+        logger.info(f"Exported: {excel_path}")
         return files
 
     def export_json(self, evaluations: List[Dict], model_name: str,
@@ -261,8 +229,11 @@ class IntegrationAgent:
 
             if attempt < max_attempts - 1:
                 backoff = min(2 ** (attempt + 1), 8)  # MED-NEW-9: 2, 4, (capped 8)
-                logger.debug(f"Webhook retry backoff: {backoff}s")
-                time.sleep(backoff)
+                # MED-12: Add jitter (±25%) to prevent thundering-herd
+                jitter = backoff * random.uniform(-0.25, 0.25)
+                delay = max(0.1, backoff + jitter)
+                logger.debug(f"Webhook retry backoff: {delay:.2f}s (base {backoff}s)")
+                time.sleep(delay)
 
         logger.error("Webhook failed after 3 attempts")
         return False

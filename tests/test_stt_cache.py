@@ -249,3 +249,46 @@ class TestEdgeCases:
 
     def test_default_ttl(self):
         assert DEFAULT_STT_CACHE_TTL_SECONDS == 30 * 24 * 3600
+
+
+# --- Tests: MED-14 — LRU Eviction ---
+
+class TestLRUEviction:
+
+    def test_eviction_when_over_max(self, cache_dir):
+        """MED-14: When max_entries is set and exceeded, oldest entries are evicted."""
+        cache = STTCache(cache_dir=cache_dir, enable=True, max_entries=3)
+
+        sample = {"text": "hello", "raw_text": "hello"}
+        for i in range(5):
+            key = f"key_{i:03d}"
+            cache.save(key, sample)
+            # Slight delay to ensure distinct mtimes
+            time.sleep(0.05)
+
+        assert cache.size() <= 3
+
+    def test_no_eviction_when_unlimited(self, cache_dir):
+        """MED-14: max_entries=0 means unlimited — no eviction."""
+        cache = STTCache(cache_dir=cache_dir, enable=True, max_entries=0)
+
+        sample = {"text": "hello", "raw_text": "hello"}
+        for i in range(5):
+            cache.save(f"key_{i:03d}", sample)
+
+        assert cache.size() == 5
+
+    def test_eviction_removes_oldest(self, cache_dir):
+        """MED-14: Oldest entries (by mtime) should be evicted first."""
+        cache = STTCache(cache_dir=cache_dir, enable=True, max_entries=2)
+
+        sample = {"text": "hello", "raw_text": "hello"}
+        cache.save("oldest", sample)
+        time.sleep(0.05)
+        cache.save("middle", sample)
+        time.sleep(0.05)
+        cache.save("newest", sample)
+
+        # oldest should have been evicted
+        assert cache.load("newest") is not None
+        assert cache.size() <= 2

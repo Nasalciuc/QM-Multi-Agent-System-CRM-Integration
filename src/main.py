@@ -10,6 +10,7 @@ Usage:
 import argparse
 import os
 import sys
+from datetime import datetime as _dt
 from pathlib import Path
 from typing import Optional
 
@@ -145,6 +146,28 @@ def _run_dry_run(args, config, logger):
     print()
 
 
+def _validate_date(value: str, label: str) -> str:
+    """MED-16: Validate date string is YYYY-MM-DD and not in the future.
+
+    Returns the validated date string, or calls sys.exit(1) on failure.
+    """
+    try:
+        parsed = _dt.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        logging_mod = __import__("logging")
+        logging_mod.getLogger("qa_system").error(
+            f"Invalid {label} date '{value}': expected YYYY-MM-DD format"
+        )
+        sys.exit(1)
+    if parsed.date() > _dt.now().date():
+        logging_mod = __import__("logging")
+        logging_mod.getLogger("qa_system").error(
+            f"{label} date '{value}' is in the future"
+        )
+        sys.exit(1)
+    return value
+
+
 def main():
     parser = argparse.ArgumentParser(description="Call Center QA System")
     parser.add_argument('--date-from', help='Start date (YYYY-MM-DD)')
@@ -164,6 +187,12 @@ def main():
     load_env()
     logger = setup_logging()
     config = load_config()
+
+    # MED-16: Validate date inputs early
+    if args.date_from:
+        _validate_date(args.date_from, "--date-from")
+    if args.date_to:
+        _validate_date(args.date_to, "--date-to")
 
     # MED-19: Health check mode — validate environment and exit
     if args.check:
@@ -192,12 +221,29 @@ def main():
     validate_env(required)
 
     # #25: Idempotency — prevent concurrent/duplicate runs
+    # HIGH-10: Verify PID in lock file is still running before rejecting
     lock_file = Path("data/.pipeline.lock")
     if lock_file.exists() and not args.force:
-        logger.error("Pipeline lock file exists. Another run may be in progress.")
-        print(f"\nERROR: Lock file exists: {lock_file}")
-        print(f"  If no other run is active, use --force or delete {lock_file}")
-        sys.exit(1)
+        try:
+            stored_pid = int(lock_file.read_text().strip())
+            try:
+                os.kill(stored_pid, 0)  # Check if process exists (signal 0 = no-op)
+                # Process exists — lock is valid
+                logger.error(
+                    f"Pipeline lock file exists (PID {stored_pid} is running). "
+                    "Use --force to override."
+                )
+                sys.exit(1)
+            except (OSError, ProcessLookupError):
+                # PID not running — stale lock file, safe to remove
+                logger.warning(
+                    f"Stale lock file found (PID {stored_pid} not running). Removing."
+                )
+                lock_file.unlink(missing_ok=True)
+        except (ValueError, OSError):
+            # Can't read/parse lock file — treat as stale
+            logger.warning("Could not parse lock file PID. Removing stale lock.")
+            lock_file.unlink(missing_ok=True)
     try:
         lock_file.parent.mkdir(parents=True, exist_ok=True)
         lock_file.write_text(str(os.getpid()))
@@ -286,9 +332,13 @@ def main():
             agent_id=args.agent_id,
         )
 
-        pipeline = Pipeline(agent_audio, agent_stt, agent_qm, agent_integration,
-                            max_budget_usd=args.budget)
-        results = pipeline.run(args.date_from, args.date_to)
+        # CRIT-3: Ensure CRMAgent httpx client is closed even on error
+        try:
+            pipeline = Pipeline(agent_audio, agent_stt, agent_qm, agent_integration,
+                                max_budget_usd=args.budget)
+            results = pipeline.run(args.date_from, args.date_to)
+        finally:
+            agent_audio.close()
 
     else:
         parser.print_help()

@@ -310,3 +310,26 @@ class TestEvaluateFlow:
         # Phone number should have been redacted
         assert "555-123-4567" not in raw
         assert "[PHONE]" in raw
+
+
+# --- Tests: MED-13 — Cache write failure counter ---
+
+class TestCacheWriteFailureCounter:
+
+    def test_initial_write_failures_zero(self, engine):
+        """MED-13: Counter should start at zero."""
+        assert engine._cache_write_failures == 0
+        assert engine.cache_stats["cache_write_failures"] == 0
+
+    def test_write_failure_increments_counter(self, engine, tmp_path):
+        """MED-13: OSError during _save_cache should increment counter."""
+        # Make cache dir read-only to force write failure
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir(exist_ok=True)
+
+        # Patch tempfile.mkstemp to raise OSError
+        with patch("inference.inference_engine.tempfile.mkstemp", side_effect=OSError("disk full")):
+            engine._save_cache("test_key", {"criteria": {}, "overall_assessment": "OK"})
+
+        assert engine._cache_write_failures == 1
+        assert engine.cache_stats["cache_write_failures"] == 1

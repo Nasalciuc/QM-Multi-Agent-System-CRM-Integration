@@ -10,11 +10,17 @@ Two classes:
 from pathlib import Path
 from typing import List, Dict, Optional
 from urllib.parse import urlparse
+from datetime import datetime, timedelta
 import os
+import tempfile
 import time
 import logging
 
 import httpx
+import urllib3
+
+# Suppress SSL verification warnings for self-signed certificates
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger("qa_system.agents")
 
@@ -111,7 +117,9 @@ class CRMAgent:
                 "Authorization": f"Bearer {self.api_token}",
                 "Accept": "application/json",
             },
+            verify=False,  # Disable SSL verification for self-signed certs
         )
+        self._last_query_truncated = False  # CRIT-2: Flag set when pagination detects truncation
         logger.info(
             f"CRMAgent initialized | Base URL: {self.base_url} | "
             f"Download folder: {self.download_folder}"
@@ -214,6 +222,97 @@ class CRMAgent:
         return deduped
 
     # ------------------------------------------------------------------
+    # Paginated Search (CRIT-2: date-windowing to prevent silent data loss)
+    # ------------------------------------------------------------------
+
+    def search_recordings_paginated(
+        self,
+        date_from: str,
+        date_to: Optional[str] = None,
+        *,
+        _depth: int = 0,
+        _MAX_DEPTH: int = 5,
+    ) -> List[Dict]:
+        """Search CRM recordings with automatic date-windowing pagination.
+
+        CRIT-2: If a single query returns >= API_MAX_LIMIT results, the date
+        range is split in half and each half is queried recursively to avoid
+        silent data loss.
+
+        Args:
+            date_from: Start date (YYYY-MM-DD).
+            date_to: End date (YYYY-MM-DD). Defaults to today.
+            _depth: Internal recursion depth counter.
+            _MAX_DEPTH: Maximum recursion depth (prevents infinite splitting).
+
+        Returns:
+            Deduplicated flat list of call-record dicts.
+        """
+        if date_to is None:
+            date_to = datetime.now().strftime("%Y-%m-%d")
+
+        records = self.search_recordings(date_from, date_to)
+
+        # Check if results may be truncated
+        if len(records) >= self.API_MAX_LIMIT:
+            if _depth >= _MAX_DEPTH:
+                self._last_query_truncated = True
+                logger.error(
+                    f"Pagination max depth ({_MAX_DEPTH}) reached for "
+                    f"{date_from}–{date_to}. Results may be incomplete."
+                )
+                return records
+
+            # Split date range in half
+            dt_from = datetime.strptime(date_from, "%Y-%m-%d")
+            dt_to = datetime.strptime(date_to, "%Y-%m-%d")
+            delta = (dt_to - dt_from).days
+
+            if delta < 1:
+                # Cannot split further — single day still exceeds limit
+                self._last_query_truncated = True
+                logger.warning(
+                    f"Single day {date_from} returned {len(records)} results (>= limit). "
+                    "Cannot split further."
+                )
+                return records
+
+            mid = dt_from + timedelta(days=delta // 2)
+            mid_str = mid.strftime("%Y-%m-%d")
+
+            logger.info(
+                f"Pagination: splitting {date_from}–{date_to} at {mid_str} "
+                f"(depth={_depth + 1})"
+            )
+
+            left = self.search_recordings_paginated(
+                date_from, mid_str, _depth=_depth + 1, _MAX_DEPTH=_MAX_DEPTH
+            )
+            right = self.search_recordings_paginated(
+                (mid + timedelta(days=1)).strftime("%Y-%m-%d"),
+                date_to,
+                _depth=_depth + 1,
+                _MAX_DEPTH=_MAX_DEPTH,
+            )
+
+            # Deduplicate across halves by call ID
+            seen_ids: set = set()
+            combined: List[Dict] = []
+            for rec in left + right:
+                cid = rec["id"]
+                if cid not in seen_ids:
+                    seen_ids.add(cid)
+                    combined.append(rec)
+
+            logger.info(
+                f"Pagination merged: {len(left)} + {len(right)} → {len(combined)} "
+                f"unique records for {date_from}–{date_to}"
+            )
+            return combined
+
+        return records
+
+    # ------------------------------------------------------------------
     # Download
     # ------------------------------------------------------------------
 
@@ -222,6 +321,10 @@ class CRMAgent:
         try:
             recording_url = call_record.get("recording_url", "")
             call_id = call_record.get("id", "unknown")
+
+            if not recording_url:
+                logger.warning(f"No recording URL for call {call_id}")
+                return None
 
             # SSRF protection: validate URL domain
             parsed = urlparse(recording_url)
@@ -241,29 +344,75 @@ class CRMAgent:
                 logger.info(f"Already exists: {filename}")
                 return str(filepath)
 
-            response = self._client.get(
-                recording_url,
-                headers={"Authorization": f"Bearer {self.api_token}"},
-            )
-            response.raise_for_status()
+            logger.debug(f"Downloading {filename} from {recording_url[:80]}...")
 
-            content = response.content
-            if len(content) > self.MAX_DOWNLOAD_BYTES:
-                logger.error(
-                    f"Recording {call_id} exceeds size limit: "
-                    f"{len(content)} bytes > {self.MAX_DOWNLOAD_BYTES} bytes"
-                )
-                return None
+            # CRIT-1: Streaming download — prevents OOM on large files.
+            # Recording URLs are pre-signed — do NOT send Authorization header.
+            # Use httpx.stream() directly (not self._client which has auth headers).
+            tmp_fd = None
+            tmp_path = None
+            try:
+                with httpx.stream(
+                    "GET",
+                    recording_url,
+                    timeout=60,
+                    verify=False,
+                    follow_redirects=True,
+                ) as stream:
+                    if stream.status_code == 401:
+                        logger.error(f"Recording download auth failed (401) for {call_id}")
+                        return None
 
-            with open(filepath, "wb") as f:
-                f.write(content)
+                    if stream.status_code != 200:
+                        logger.error(f"Recording download returned {stream.status_code} for {call_id}")
+                        return None
+
+                    # Content-type validation — reject HTML login pages
+                    content_type = stream.headers.get("content-type", "")
+                    if "text/html" in content_type:
+                        logger.error(
+                            f"Recording {call_id} returned HTML instead of audio "
+                            f"(content-type: {content_type}). URL may require auth."
+                        )
+                        return None
+
+                    # Stream to temp file, then atomic rename
+                    tmp_fd, tmp_path = tempfile.mkstemp(
+                        dir=str(self.download_folder), suffix=".tmp"
+                    )
+                    total_bytes = 0
+                    with os.fdopen(tmp_fd, "wb") as tmp_f:
+                        tmp_fd = None  # os.fdopen takes ownership
+                        for chunk in stream.iter_bytes(chunk_size=64 * 1024):
+                            total_bytes += len(chunk)
+                            if total_bytes > self.MAX_DOWNLOAD_BYTES:
+                                logger.error(
+                                    f"Recording {call_id} exceeds size limit during "
+                                    f"download: >{self.MAX_DOWNLOAD_BYTES} bytes"
+                                )
+                                return None
+                            tmp_f.write(chunk)
+
+                    if total_bytes == 0:
+                        logger.error(f"Recording download returned empty content for {call_id}")
+                        return None
+
+                    # Atomic rename (safe on Windows via os.replace)
+                    os.replace(tmp_path, str(filepath))
+                    tmp_path = None  # Prevent cleanup
+
+            finally:
+                if tmp_fd is not None:
+                    os.close(tmp_fd)
+                if tmp_path and os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
 
             time.sleep(self.delay_seconds)
-            logger.info(f"Downloaded: {filename}")
+            logger.info(f"Downloaded: {filename} ({total_bytes} bytes)")
             return str(filepath)
 
         except Exception as e:
-            logger.error(f"Download error for call {call_record.get('id')}: {e}")
+            logger.error(f"Download error for call {call_record.get('id')}: {type(e).__name__}: {e}")
             return None
 
     # ------------------------------------------------------------------
@@ -281,7 +430,7 @@ class CRMAgent:
         total = len(calls)
 
         for i, call in enumerate(calls, 1):
-            print(f"  Downloading {i} of {total}...", end="\r")
+            logger.info(f"Downloading {i} of {total}...")
             local_path = self.download_audio(call)
             call["local_audio_path"] = local_path
 
@@ -360,3 +509,11 @@ class CRMAgent:
         """Close the underlying httpx client."""
         self._client.close()
         logger.debug("CRMAgent httpx client closed")
+
+    # CRIT-3: Context manager support for resource cleanup
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False

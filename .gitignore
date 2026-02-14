@@ -21,7 +21,9 @@ data/transcripts/
 data/evaluations/
 data/cache/
 data/stt_cache/
+data/exports/
 *.log
+*.json.log
 logs/
 
 # Test cache

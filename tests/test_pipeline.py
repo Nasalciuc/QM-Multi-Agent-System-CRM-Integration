@@ -20,10 +20,13 @@ from pipeline import Pipeline, _GracefulShutdown
 
 @pytest.fixture(autouse=True)
 def reset_shutdown():
-    """Reset graceful shutdown state between tests."""
-    _GracefulShutdown.reset()
-    yield
-    _GracefulShutdown.reset()
+    """Reset graceful shutdown state between tests.
+    HIGH-9: _GracefulShutdown is now instance-based, but we create
+    a fresh instance for standalone tests.
+    """
+    shutdown = _GracefulShutdown()
+    yield shutdown
+    # No global state to clean up anymore
 
 
 @pytest.fixture
@@ -198,19 +201,22 @@ class TestSTTCost:
 class TestGracefulShutdown:
 
     def test_shutdown_flag(self):
-        assert not _GracefulShutdown.is_triggered()
-        _GracefulShutdown.trigger(signal.SIGINT, None)
-        assert _GracefulShutdown.is_triggered()
-        _GracefulShutdown.reset()
-        assert not _GracefulShutdown.is_triggered()
+        """HIGH-9: Instance-based shutdown with threading.Event."""
+        shutdown = _GracefulShutdown()
+        assert not shutdown.is_triggered()
+        shutdown.trigger(signal.SIGINT, None)
+        assert shutdown.is_triggered()
+        shutdown.reset()
+        assert not shutdown.is_triggered()
 
     def test_shutdown_reset_at_pipeline_start(self, mock_agents):
         """MED-NEW-15: Stale shutdown state should be cleared at run start."""
-        _GracefulShutdown.trigger(signal.SIGINT, None)
-        assert _GracefulShutdown.is_triggered()
-
         a1, a2, a3, a4 = mock_agents
         pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+        # Trigger shutdown before running
+        pipeline._shutdown.trigger(signal.SIGINT, None)
+        assert pipeline._shutdown.is_triggered()
+
         pipeline.run_local([Path("call1.mp3")])
         # After run, the shutdown should have been reset at start
         # and evaluations should have proceeded
@@ -218,17 +224,20 @@ class TestGracefulShutdown:
 
     def test_interruptible_sleep(self):
         """MED-NEW-11: _interruptible_sleep should exit early on shutdown signal."""
-        # Trigger shutdown partway through
-        _GracefulShutdown.reset()
-        import threading
+        # Create a pipeline to test instance method
+        a1, a2, a3, a4 = MagicMock(), MagicMock(), MagicMock(), MagicMock()
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+        pipeline._shutdown.reset()
+
+        import threading as th
         def trigger_after():
             time.sleep(0.1)
-            _GracefulShutdown.trigger(signal.SIGINT, None)
-        t = threading.Thread(target=trigger_after, daemon=True)
+            pipeline._shutdown.trigger(signal.SIGINT, None)
+        t = th.Thread(target=trigger_after, daemon=True)
         t.start()
 
         start = time.time()
-        Pipeline._interruptible_sleep(5.0, granularity=0.05)
+        pipeline._interruptible_sleep(5.0, granularity=0.05)
         elapsed = time.time() - start
         # Should exit well before 5s
         assert elapsed < 1.0, f"Sleep was not interrupted ({elapsed:.2f}s)"

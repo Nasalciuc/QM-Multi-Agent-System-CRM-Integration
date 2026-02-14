@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 from unittest.mock import patch, MagicMock, PropertyMock
+from contextlib import contextmanager
 
 import pytest
 
@@ -377,18 +378,28 @@ class TestCRMAgentSearch:
 
 class TestCRMAgentDownload:
 
-    def test_download_audio_success(self, crm_agent):
-        """Should download file and return filepath."""
+    def _mock_stream_context(self, status_code=200, content=b"fake audio data",
+                             content_type="audio/mpeg"):
+        """Helper: create a mock httpx.stream() context manager."""
+        mock_stream = MagicMock()
+        mock_stream.status_code = status_code
+        mock_stream.headers = {"content-type": content_type}
+        mock_stream.iter_bytes = MagicMock(return_value=[content] if content else [])
+        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream.__exit__ = MagicMock(return_value=False)
+        return mock_stream
+
+    @patch("agents.agent_01_audio.httpx.stream")
+    def test_download_audio_success(self, mock_httpx_stream, crm_agent):
+        """Should download file via streaming and return filepath."""
         call_record = {
             "id": "abc123",
             "startTime": "2026-02-05T14:13:24Z",
             "recording_url": "https://crm.buybusinessclass.com/storage/call_log/test.mp3",
         }
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.content = b"fake audio data"
-        mock_response.raise_for_status = MagicMock()
-        crm_agent._client.get.return_value = mock_response
+        mock_httpx_stream.return_value = self._mock_stream_context(
+            content=b"fake audio data"
+        )
 
         result = crm_agent.download_audio(call_record)
 
@@ -415,18 +426,24 @@ class TestCRMAgentDownload:
         # No HTTP request should have been made
         crm_agent._client.get.assert_not_called()
 
-    def test_download_audio_size_limit_exceeded(self, crm_agent, caplog):
-        """Should reject files exceeding MAX_DOWNLOAD_BYTES."""
+    @patch("agents.agent_01_audio.httpx.stream")
+    def test_download_audio_size_limit_exceeded(self, mock_httpx_stream, crm_agent, caplog):
+        """Should reject files exceeding MAX_DOWNLOAD_BYTES during streaming."""
         call_record = {
             "id": "big_file",
             "startTime": "2026-02-05T14:13:24Z",
             "recording_url": "https://crm.buybusinessclass.com/storage/call_log/big.mp3",
         }
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.content = b"x" * (CRMAgent.MAX_DOWNLOAD_BYTES + 1)
-        mock_response.raise_for_status = MagicMock()
-        crm_agent._client.get.return_value = mock_response
+        # Create oversized content as chunks
+        chunk = b"x" * (64 * 1024)
+        num_chunks = (CRMAgent.MAX_DOWNLOAD_BYTES // len(chunk)) + 2
+        mock_stream = MagicMock()
+        mock_stream.status_code = 200
+        mock_stream.headers = {"content-type": "audio/mpeg"}
+        mock_stream.iter_bytes = MagicMock(return_value=[chunk] * num_chunks)
+        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream.__exit__ = MagicMock(return_value=False)
+        mock_httpx_stream.return_value = mock_stream
 
         import logging
         with caplog.at_level(logging.ERROR, logger="qa_system.agents"):
@@ -466,7 +483,8 @@ class TestCRMAgentDownload:
 
 class TestCRMAgentSearchAndDownload:
 
-    def test_search_and_download_integration(self, crm_agent, sample_crm_response):
+    @patch("agents.agent_01_audio.httpx.stream")
+    def test_search_and_download_integration(self, mock_httpx_stream, crm_agent, sample_crm_response):
         """Should search, download, and set local_audio_path on each record."""
         # Mock search
         mock_search_response = MagicMock()
@@ -475,12 +493,14 @@ class TestCRMAgentSearchAndDownload:
         mock_search_response.content = json.dumps(sample_crm_response).encode()
         crm_agent._client.request.return_value = mock_search_response
 
-        # Mock download
-        mock_dl_response = MagicMock()
-        mock_dl_response.status_code = 200
-        mock_dl_response.content = b"audio bytes"
-        mock_dl_response.raise_for_status = MagicMock()
-        crm_agent._client.get.return_value = mock_dl_response
+        # Mock streaming download
+        mock_stream = MagicMock()
+        mock_stream.status_code = 200
+        mock_stream.headers = {"content-type": "audio/mpeg"}
+        mock_stream.iter_bytes = MagicMock(return_value=[b"audio bytes"])
+        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream.__exit__ = MagicMock(return_value=False)
+        mock_httpx_stream.return_value = mock_stream
 
         results = crm_agent.search_and_download("2026-02-01", "2026-02-10")
 
@@ -498,3 +518,235 @@ class TestCRMAgentClose:
         """close() should close the httpx client."""
         crm_agent.close()
         crm_agent._client.close.assert_called_once()
+
+
+# --- Tests: Context Manager (CRIT-3) ---
+
+
+class TestCRMAgentContextManager:
+
+    def test_context_manager_calls_close(self, tmp_path):
+        """Using CRMAgent as context manager should call close() on exit."""
+        with patch("agents.agent_01_audio.httpx.Client") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+            with CRMAgent(
+                api_token="test-token", download_folder=str(tmp_path / "audio")
+            ) as agent:
+                agent._client = mock_client
+            mock_client.close.assert_called_once()
+
+    def test_context_manager_closes_on_error(self, tmp_path):
+        """Context manager should close client even when body raises an error."""
+        with patch("agents.agent_01_audio.httpx.Client") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+            with pytest.raises(ValueError):
+                with CRMAgent(
+                    api_token="test-token", download_folder=str(tmp_path / "audio")
+                ) as agent:
+                    agent._client = mock_client
+                    raise ValueError("boom")
+            mock_client.close.assert_called_once()
+
+
+# --- Tests: Streaming Download Validation (CRIT-1) ---
+
+
+class TestCRMAgentStreamingDownload:
+
+    def _mock_stream_context(self, status_code=200, content=b"fake audio",
+                             content_type="audio/mpeg"):
+        mock_stream = MagicMock()
+        mock_stream.status_code = status_code
+        mock_stream.headers = {"content-type": content_type}
+        mock_stream.iter_bytes = MagicMock(return_value=[content] if content else [])
+        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream.__exit__ = MagicMock(return_value=False)
+        return mock_stream
+
+    @patch("agents.agent_01_audio.httpx.stream")
+    def test_download_rejects_html_content_type(self, mock_httpx_stream, crm_agent, caplog):
+        """Should reject recording that returns text/html (login page)."""
+        call_record = {
+            "id": "html_call",
+            "startTime": "2026-02-05T14:13:24Z",
+            "recording_url": "https://crm.buybusinessclass.com/storage/call_log/test.mp3",
+        }
+        mock_httpx_stream.return_value = self._mock_stream_context(
+            content_type="text/html; charset=utf-8"
+        )
+
+        import logging
+        with caplog.at_level(logging.ERROR, logger="qa_system.agents"):
+            result = crm_agent.download_audio(call_record)
+
+        assert result is None
+        assert any("html" in msg.lower() for msg in caplog.messages)
+
+    @patch("agents.agent_01_audio.httpx.stream")
+    def test_download_empty_stream(self, mock_httpx_stream, crm_agent, caplog):
+        """Should reject download when stream returns no bytes."""
+        call_record = {
+            "id": "empty_call",
+            "startTime": "2026-02-05T14:13:24Z",
+            "recording_url": "https://crm.buybusinessclass.com/storage/call_log/test.mp3",
+        }
+        mock_httpx_stream.return_value = self._mock_stream_context(content=b"")
+
+        import logging
+        with caplog.at_level(logging.ERROR, logger="qa_system.agents"):
+            result = crm_agent.download_audio(call_record)
+
+        assert result is None
+
+    @patch("agents.agent_01_audio.httpx.stream")
+    def test_download_401_returns_none(self, mock_httpx_stream, crm_agent):
+        """Should return None on 401 auth failure."""
+        call_record = {
+            "id": "auth_fail",
+            "startTime": "2026-02-05T14:13:24Z",
+            "recording_url": "https://crm.buybusinessclass.com/storage/call_log/test.mp3",
+        }
+        mock_httpx_stream.return_value = self._mock_stream_context(status_code=401)
+
+        result = crm_agent.download_audio(call_record)
+        assert result is None
+
+
+# --- Tests: Paginated Search (CRIT-2) ---
+
+
+class TestCRMAgentPagination:
+
+    def _make_response(self, count, num_items):
+        """Create a mock CRM API response with the given count and number of items."""
+        items = [
+            {
+                "id": i,
+                "created_at": "2026-02-10T10:00:00Z",
+                "status": "open",
+                "agent": {"id": 10, "name": "A", "email": None},
+                "client": {"first_name": "B", "last_name": "C", "email": None, "phone": None},
+                "calls": [
+                    {
+                        "id": f"c_{i}",
+                        "started_at": "2026-02-05T10:00:00Z",
+                        "duration": 60,
+                        "direction": "inbound",
+                        "result": "call_connected",
+                        "recording_url": f"https://crm.buybusinessclass.com/storage/c{i}.mp3",
+                    },
+                ],
+            }
+            for i in range(num_items)
+        ]
+        return {"success": True, "count": count, "items": items}
+
+    def test_paginated_no_split_needed(self, crm_agent):
+        """When results < API_MAX_LIMIT, no splitting occurs."""
+        data = self._make_response(5, 5)
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = data
+        mock_resp.content = json.dumps(data).encode()
+        crm_agent._client.request.return_value = mock_resp
+
+        records = crm_agent.search_recordings_paginated("2026-02-01", "2026-02-10")
+
+        assert len(records) == 5
+        assert not crm_agent._last_query_truncated
+
+    def test_paginated_splits_date_range(self, crm_agent):
+        """When results >= API_MAX_LIMIT, should split and recurse."""
+        full_data = self._make_response(200, 200)  # Triggers split
+        half_data = self._make_response(50, 50)  # Under limit
+
+        call_count = 0
+
+        def mock_request(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            # First call returns full (triggers split), subsequent calls return half
+            if call_count == 1:
+                mock_resp.json.return_value = full_data
+                mock_resp.content = json.dumps(full_data).encode()
+            else:
+                mock_resp.json.return_value = half_data
+                mock_resp.content = json.dumps(half_data).encode()
+            return mock_resp
+
+        crm_agent._client.request.side_effect = mock_request
+
+        records = crm_agent.search_recordings_paginated("2026-02-01", "2026-02-10")
+
+        # Should have made at least 3 calls (1 initial + 2 halves)
+        assert call_count >= 3
+        # Should have results from both halves  
+        assert len(records) > 0
+
+    def test_paginated_max_depth_sets_truncated_flag(self, crm_agent):
+        """Should set _last_query_truncated when max depth is reached."""
+        data = self._make_response(200, 200)
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = data
+        mock_resp.content = json.dumps(data).encode()
+        crm_agent._client.request.return_value = mock_resp
+
+        # Use _MAX_DEPTH=0 to immediately trigger truncation
+        records = crm_agent.search_recordings_paginated(
+            "2026-02-01", "2026-02-10", _depth=0, _MAX_DEPTH=0
+        )
+
+        assert crm_agent._last_query_truncated is True
+        assert len(records) == 200
+
+    def test_paginated_deduplicates_across_halves(self, crm_agent):
+        """Records appearing in both halves should be deduplicated."""
+        # Both halves return a record with the same call ID
+        shared_item = {
+            "id": 999,
+            "created_at": "2026-02-05T10:00:00Z",
+            "status": "open",
+            "agent": {"id": 10, "name": "A", "email": None},
+            "client": {"first_name": "B", "last_name": "C", "email": None, "phone": None},
+            "calls": [
+                {
+                    "id": "shared_call",
+                    "started_at": "2026-02-05T10:00:00Z",
+                    "duration": 60,
+                    "direction": "inbound",
+                    "result": "call_connected",
+                    "recording_url": "https://crm.buybusinessclass.com/storage/shared.mp3",
+                },
+            ],
+        }
+
+        full_data = self._make_response(200, 200)
+        small_data_with_shared = {"success": True, "count": 1, "items": [shared_item]}
+
+        call_count = 0
+
+        def mock_request(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            if call_count == 1:
+                mock_resp.json.return_value = full_data
+                mock_resp.content = json.dumps(full_data).encode()
+            else:
+                mock_resp.json.return_value = small_data_with_shared
+                mock_resp.content = json.dumps(small_data_with_shared).encode()
+            return mock_resp
+
+        crm_agent._client.request.side_effect = mock_request
+
+        records = crm_agent.search_recordings_paginated("2026-02-01", "2026-02-10")
+
+        # "shared_call" should appear only once
+        shared_count = sum(1 for r in records if r["id"] == "shared_call")
+        assert shared_count == 1

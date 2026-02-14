@@ -77,3 +77,19 @@ loggers:
     level: INFO
     handlers: [console, file]
     propagate: false
+
+  # MED-15: Ensure STT cache and config loggers are included
+  qa_system.stt_cache:
+    level: INFO
+    handlers: [console, file]
+    propagate: false
+
+  qa_system.config:
+    level: INFO
+    handlers: [console, file]
+    propagate: false
+
+  qa_system.pipeline:
+    level: INFO
+    handlers: [console, file]
+    propagate: false

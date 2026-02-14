@@ -46,7 +46,7 @@ COPY src/ src/
 COPY config/ config/
 
 # Create data directories owned by appuser
-RUN mkdir -p data/audio data/transcripts data/evaluations data/cache && \
+RUN mkdir -p data/audio data/transcripts data/evaluations data/cache data/stt_cache && \
     chown -R appuser:appuser data/
 
 # Set Python path so src/ imports work

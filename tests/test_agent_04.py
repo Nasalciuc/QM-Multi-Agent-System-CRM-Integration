@@ -207,3 +207,20 @@ class TestWebhook:
         """#32: Without webhook_secret, no HMAC header should be added."""
         # Agent without secret should not have webhook_secret set
         assert not agent_with_webhook.webhook_secret
+
+    @patch("agents.agent_04_export.time.sleep")
+    @patch("agents.agent_04_export.httpx.Client")
+    def test_webhook_retry_uses_jitter(self, mock_client_class, mock_sleep, agent_with_webhook):
+        """MED-12: Backoff delays should include jitter (not exact powers of 2)."""
+        mock_client = MagicMock()
+        mock_client.post.side_effect = Exception("Connection error")
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+
+        agent_with_webhook.send_webhook({"event": "test"})
+        assert mock_sleep.call_count == 2  # 2 retries = 2 sleeps
+        # Backoff with ±25% jitter: base 2 → [1.5, 2.5], base 4 → [3.0, 5.0]
+        for call in mock_sleep.call_args_list:
+            delay = call[0][0]
+            assert 0.1 <= delay <= 10.0  # sanity bound

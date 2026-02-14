@@ -48,10 +48,12 @@ class STTCache:
         cache_dir: str = "data/stt_cache",
         enable: bool = True,
         ttl_seconds: int = DEFAULT_STT_CACHE_TTL_SECONDS,
+        max_entries: int = 0,  # MED-14: 0 = unlimited
     ):
         self._cache_dir: Optional[Path] = Path(cache_dir) if cache_dir else None
         self._enabled = enable and self._cache_dir is not None
         self._ttl = ttl_seconds
+        self._max_entries = max_entries  # MED-14: LRU eviction threshold
 
         # Stats tracking
         self._hits = 0
@@ -182,6 +184,9 @@ class STTCache:
             os.replace(tmp_path, str(path))
             self._saves += 1
             logger.debug(f"STT cache saved: {key[:12]}")
+            # MED-14: Evict oldest entries when max_entries is exceeded
+            if self._max_entries > 0:
+                self._evict_lru()
         except OSError as e:
             logger.warning(f"STT cache save error: {e}")
             self._errors += 1
@@ -190,6 +195,25 @@ class STTCache:
         finally:
             if fd is not None:
                 os.close(fd)
+
+    def _evict_lru(self) -> None:
+        """MED-14: Remove oldest cache entries (by mtime) when over max_entries."""
+        if not self._cache_dir or self._max_entries <= 0:
+            return
+        entries = sorted(
+            self._cache_dir.glob("*.json"),
+            key=lambda p: p.stat().st_mtime,
+        )
+        evicted = 0
+        while len(entries) > self._max_entries:
+            oldest = entries.pop(0)
+            try:
+                oldest.unlink(missing_ok=True)
+                evicted += 1
+            except OSError:
+                pass
+        if evicted:
+            logger.info(f"STT cache LRU eviction: removed {evicted} oldest entries")
 
     def _cleanup_expired(self) -> None:
         """Remove cache entries older than TTL at startup."""

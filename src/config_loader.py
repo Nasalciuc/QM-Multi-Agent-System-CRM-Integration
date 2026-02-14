@@ -4,10 +4,13 @@ Config Loader (#21)
 Extracted from utils.py — YAML config loading and validation functions.
 """
 
+import logging
 import os
 import yaml
 from pathlib import Path
 from typing import List
+
+logger = logging.getLogger("qa_system.config")
 
 
 def load_config(config_path: str = "config/agents.yaml") -> dict:
@@ -30,10 +33,8 @@ def validate_env(required_keys: List[str]) -> None:
     Raises SystemExit with clear message listing all missing keys."""
     missing = [k for k in required_keys if not os.environ.get(k, "").strip()]
     if missing:
-        print(f"\nERROR: Missing required environment variables:")
-        for key in missing:
-            print(f"  - {key}")
-        print(f"\nSet them in .env or export them before running.")
+        # HIGH-8: Use logging instead of print for config validation errors
+        logger.error(f"Missing required environment variables: {', '.join(missing)}")
         raise SystemExit(1)
 
 

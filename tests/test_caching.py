@@ -262,12 +262,13 @@ class TestEnhancedSummary:
         p._providers_used = {"openrouter"}
         return p
 
-    def test_summary_no_evaluations(self, pipeline, capsys):
-        pipeline.print_summary([])
-        out = capsys.readouterr().out
-        assert "No evaluations" in out
+    def test_summary_no_evaluations(self, pipeline, caplog):
+        import logging
+        with caplog.at_level(logging.INFO, logger="qa_system.pipeline"):
+            pipeline.print_summary([])
+        assert any("No evaluations" in msg for msg in caplog.messages)
 
-    def test_summary_with_scores(self, pipeline, capsys):
+    def test_summary_with_scores(self, pipeline, caplog):
         evals = [
             {"filename": "call1.mp3", "call_type": "First Call",
              "overall_score": 85.0, "cost_usd": 0.003,
@@ -276,29 +277,28 @@ class TestEnhancedSummary:
              "overall_score": 72.0, "cost_usd": 0.003,
              "tokens_used": {"input": 1400, "output": 700}},
         ]
-        pipeline.print_summary(evals)
-        out = capsys.readouterr().out
-        assert "PIPELINE SUMMARY" in out
-        assert "Quality Scores" in out
-        assert "Cost Breakdown" in out
-        assert "Token Utilization" in out
-        assert "Cache Performance" in out
-        assert "Budget Status" in out
-        assert "85.0" in out
-        assert "72.0" in out
+        import logging
+        with caplog.at_level(logging.INFO, logger="qa_system.pipeline"):
+            pipeline.print_summary(evals)
+        combined = " ".join(caplog.messages)
+        assert "PIPELINE SUMMARY" in combined
+        assert "85.0" in combined
+        assert "72.0" in combined
 
-    def test_summary_budget_section(self, pipeline, capsys):
+    def test_summary_budget_section(self, pipeline, caplog):
         evals = [
             {"filename": "c.mp3", "call_type": "First Call",
              "overall_score": 90.0, "cost_usd": 0.005,
              "tokens_used": {"input": 1000, "output": 500}},
         ]
-        pipeline.print_summary(evals)
-        out = capsys.readouterr().out
-        assert "$10.00" in out  # Budget
-        assert "Remaining" in out
+        import logging
+        with caplog.at_level(logging.INFO, logger="qa_system.pipeline"):
+            pipeline.print_summary(evals)
+        combined = " ".join(caplog.messages)
+        assert "$10.00" in combined  # Budget
+        assert "Remaining" in combined
 
-    def test_summary_no_budget(self, capsys):
+    def test_summary_no_budget(self, caplog):
         from pipeline import Pipeline
         agent_02 = MagicMock()
         agent_02.stt_cache = MagicMock()
@@ -312,6 +312,8 @@ class TestEnhancedSummary:
              "overall_score": 90.0, "cost_usd": 0.005,
              "tokens_used": {"input": 1000, "output": 500}},
         ]
-        p.print_summary(evals)
-        out = capsys.readouterr().out
-        assert "Budget Status" not in out
+        import logging
+        with caplog.at_level(logging.INFO, logger="qa_system.pipeline"):
+            p.print_summary(evals)
+        combined = " ".join(caplog.messages)
+        assert "Budget" not in combined

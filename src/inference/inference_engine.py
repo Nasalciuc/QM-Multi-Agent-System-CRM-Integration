@@ -17,21 +17,14 @@ import logging
 import threading
 from collections import OrderedDict
 from datetime import datetime, date
-from decimal import Decimal
 from pathlib import Path
 from typing import Dict, Optional, Set
-
-# MED-NEW-13: Optional numpy import at module level
-try:
-    import numpy as np
-    _HAS_NUMPY = True
-except ImportError:
-    _HAS_NUMPY = False
 
 from core.model_factory import ModelFactory
 from core.base_llm import LLMResponse
 from prompts.templates import PromptLoader
 from inference.response_parser import ResponseParser, ValidationError
+from utils import json_serializer as _json_serializer  # HIGH-6: shared serializer
 
 logger = logging.getLogger("qa_system.inference")
 
@@ -48,34 +41,7 @@ def _get_pii_redactor():
     return _pii_redactor_instance
 
 
-def _json_serializer(obj):
-    """Explicit JSON serializer — replaces dangerous `default=str`.
-
-    CRIT-4: Only handles known types; raises TypeError for unexpected objects.
-    MED-21: Also handles numpy scalars, Decimal, and bytes.
-    MED-NEW-13: Imports moved to module level.
-    """
-    if isinstance(obj, Path):
-        return str(obj)
-    if isinstance(obj, (datetime, date)):
-        return obj.isoformat()
-    if isinstance(obj, set):
-        return sorted(obj)
-    # MED-21: numpy scalar → Python native
-    if _HAS_NUMPY:
-        if isinstance(obj, (np.integer,)):
-            return int(obj)
-        if isinstance(obj, (np.floating,)):
-            return float(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-    # MED-21: Decimal → float
-    if isinstance(obj, Decimal):
-        return float(obj)
-    # MED-21: bytes → utf-8 string
-    if isinstance(obj, bytes):
-        return obj.decode("utf-8", errors="replace")
-    raise TypeError(f"Non-serializable object: {type(obj).__name__}")
+# HIGH-6: _json_serializer removed — now imported from utils
 
 
 class InferenceEngine:
@@ -113,6 +79,7 @@ class InferenceEngine:
         self._memory_misses = 0
         self._disk_hits = 0
         self._disk_misses = 0
+        self._cache_write_failures = 0  # MED-13: Track write failures
 
         if self._enable_cache and self._cache_dir is not None:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
@@ -155,6 +122,7 @@ class InferenceEngine:
             "memory_misses": self._memory_misses,
             "disk_hits": self._disk_hits,
             "disk_misses": self._disk_misses,
+            "cache_write_failures": self._cache_write_failures,  # MED-13
             "total_lookups": total_lookups,
             "combined_hit_rate_pct": round(
                 (self._memory_hits + self._disk_hits) / max(1, total_lookups) * 100, 1
@@ -166,14 +134,17 @@ class InferenceEngine:
     def _promote_to_memory(self, key: str, data: Dict) -> None:
         """Promote a disk cache entry to the in-memory LRU cache.
 
+        HIGH-5: Thread-safe — acquires _cache_lock before mutating the
+        OrderedDict to prevent race conditions in concurrent access.
         Evicts the oldest entry if the cache exceeds maxsize.
         """
-        if key in self._memory_cache:
-            self._memory_cache.move_to_end(key)
-            return
-        self._memory_cache[key] = data
-        while len(self._memory_cache) > self._memory_cache_maxsize:
-            self._memory_cache.popitem(last=False)  # Evict oldest
+        with self._cache_lock:
+            if key in self._memory_cache:
+                self._memory_cache.move_to_end(key)
+                return
+            self._memory_cache[key] = data
+            while len(self._memory_cache) > self._memory_cache_maxsize:
+                self._memory_cache.popitem(last=False)  # Evict oldest
 
     def evaluate(
         self,
@@ -412,6 +383,7 @@ class InferenceEngine:
                 os.replace(tmp_path, str(path))  # atomic on all platforms
             except OSError as e:
                 logger.warning(f"Failed to write cache: {e}")
+                self._cache_write_failures += 1  # MED-13: Track failures
                 if tmp_path and os.path.exists(tmp_path):
                     os.unlink(tmp_path)
             finally:

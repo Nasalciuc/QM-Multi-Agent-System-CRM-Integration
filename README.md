@@ -1,7 +1,7 @@
 # 🎯 QM Multi Agent System — Call Center Quality Assurance
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-173%20passed-brightgreen.svg)](#tests)
+[![Tests](https://img.shields.io/badge/Tests-284%20passed-brightgreen.svg)](#tests)
 [![License](https://img.shields.io/badge/License-Private-lightgrey.svg)](#)
 
 Automated **4-agent pipeline** that evaluates call center recordings against **24 quality criteria** using LLM-powered analysis.
@@ -105,25 +105,28 @@ Scoring: **YES** (100%) · **PARTIAL** (50%) · **NO** (0%) · **N/A** (excluded
 ## Tests
 
 ```bash
-python -m pytest tests/ -v            # 173 tests
+python -m pytest tests/ -v            # 283 tests
 python -m pytest tests/ -v --cov=src  # with coverage
 ```
 
 | Test File | Count | Scope |
 |-----------|-------|-------|
 | `test_agent_01.py` | 7 | Audio file discovery |
-| `test_agent_02.py` | 16 | ElevenLabs transcription (Scribe v2) |
-| `test_agent_03.py` | 24 | QA evaluation + scoring |
-| `test_agent_04.py` | 9 | Export (Excel/CSV/JSON/webhook) |
-| `test_inference_engine.py` | 15 | Inference engine + caching |
-| `test_integration.py` | 3 | End-to-end smoke test |
-| `test_model_factory.py` | 12 | Model factory + fallback chain |
-| `test_pipeline.py` | 13 | Pipeline orchestration |
-| `test_processing.py` | 32 | Cleaner, counter, chunker, PII |
+| `test_agent_01_crm.py` | 26 | CRM agent + streaming + pagination |
+| `test_agent_02.py` | 25 | ElevenLabs transcription (Scribe v2) |
+| `test_agent_03.py` | 31 | QA evaluation + scoring + direction |
+| `test_agent_04.py` | 12 | Export (Excel/CSV/JSON/webhook/jitter) |
+| `test_caching.py` | 20 | Enhanced caching + summary |
+| `test_inference_engine.py` | 21 | Inference engine + cache + write failures |
+| `test_integration.py` | 6 | End-to-end smoke tests |
+| `test_model_factory.py` | 15 | Model factory + fallback chain |
+| `test_pipeline.py` | 15 | Pipeline orchestration + shutdown |
+| `test_processing.py` | 38 | Cleaner, counter, chunker, PII |
 | `test_prompt_loader.py` | 10 | Prompt template loading |
 | `test_response_parser.py` | 17 | Response parsing + validation |
 | `test_scoring.py` | 12 | Parameterized scoring edge cases |
-| **Total** | **173** | |
+| `test_stt_cache.py` | 29 | STT cache + TTL + LRU eviction |
+| **Total** | **284** | |
 
 ## Docker
 

@@ -20,6 +20,7 @@ __pycache__/
 README.md
 data/
 *.log
+*.json.log
 
 # IDE
 .vscode/

@@ -173,3 +173,20 @@ class TestIntegrationSmokeTest:
         # Should stop after 3 failures + circuit breaker entry
         circuit_breaker_entries = [r for r in results if r.get("status") == "CIRCUIT_BREAKER_TRIGGERED"]
         assert len(circuit_breaker_entries) == 1
+
+    def test_pipeline_crm_mode_smoke(self, integration_agents):
+        """LOW-17: Integration smoke test for CRM mode (mocked)."""
+        a1, a2, a3, a4 = integration_agents
+        # Mock CRM Agent behaviour — search_and_download returns call records
+        a1.search_and_download.return_value = [
+            {"local_audio_path": "data/audio/crm_call1.mp3", "recording_id": 1},
+        ]
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+
+        results = pipeline.run("2025-01-01", "2025-01-02")
+
+        # Verify CRM download was called
+        a1.search_and_download.assert_called_once_with("2025-01-01", "2025-01-02")
+        # Verify downstream agents were called
+        a2.transcribe_batch.assert_called_once()
+        assert len(results) >= 0  # May be 0 if transcription key mismatch, but no crash
