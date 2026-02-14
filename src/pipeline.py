@@ -19,6 +19,8 @@ import threading
 import time
 import logging
 
+from utils import safe_log_filename
+
 logger = logging.getLogger("qa_system.pipeline")
 
 
@@ -189,6 +191,10 @@ class Pipeline:
     def _process_audio_files(self, audio_files: List[Path]) -> List[Dict]:
         """Steps 2-4: Transcribe, evaluate, export."""
 
+        # Fix #5: Re-enable providers disabled in previous run
+        if hasattr(self.qa_agent, '_engine') and hasattr(self.qa_agent._engine, '_factory'):
+            self.qa_agent._engine._factory.reset_disabled_providers()
+
         # #7: Check disk space before processing
         self._check_disk_space()
 
@@ -212,7 +218,7 @@ class Pipeline:
                 continue
 
             eval_count += 1
-            logger.info(f"Evaluating {eval_count}: {filename}...")
+            logger.info(f"Evaluating {eval_count}: {safe_log_filename(filename)}...")
 
             # MED-3: Check for graceful shutdown signal
             if self._shutdown.is_triggered():
@@ -233,7 +239,7 @@ class Pipeline:
             # Circuit breaker: stop after N consecutive LLM failures
             if "error" in evaluation:
                 consecutive_failures += 1
-                logger.warning(f"Evaluation failed for {filename}: {evaluation['error']} "
+                logger.warning(f"Evaluation failed for {safe_log_filename(filename)}: {evaluation['error']} "
                                f"({consecutive_failures}/{self.max_consecutive_failures} consecutive)")
                 if consecutive_failures >= self.max_consecutive_failures:
                     logger.error(f"Circuit breaker triggered: {consecutive_failures} consecutive failures. "

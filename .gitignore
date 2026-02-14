@@ -22,6 +22,10 @@ data/evaluations/
 data/cache/
 data/stt_cache/
 data/exports/
+data/*.log
+data/*.log.*
+data/.pipeline.lock
+data/logs/
 *.log
 *.json.log
 logs/

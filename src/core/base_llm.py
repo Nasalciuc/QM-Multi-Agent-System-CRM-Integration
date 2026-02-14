@@ -10,6 +10,50 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
+# ── Typed LLM Exceptions (Fix #5) ──────────────────────────────────
+
+class LLMError(Exception):
+    """Base class for all LLM-related errors."""
+    pass
+
+
+class LLMQuotaExhaustedError(LLMError):
+    """Raised when the provider's usage quota is exhausted.
+
+    This is a hard stop — retrying the same provider won't help.
+    The provider should be disabled for the rest of the pipeline run.
+    """
+    pass
+
+
+class LLMRateLimitError(LLMError):
+    """Raised when the provider returns 429 Too Many Requests.
+
+    Retrying after a backoff delay is appropriate.
+    """
+
+    def __init__(self, message: str = "Rate limit exceeded", retry_after: Optional[float] = None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class LLMInvalidConfigError(LLMError):
+    """Raised when the provider configuration is invalid.
+
+    Examples: wrong API key, unsupported model, invalid base_url.
+    The provider should be disabled — retrying won't fix config issues.
+    """
+    pass
+
+
+class LLMServerError(LLMError):
+    """Raised when the provider returns a 5xx server error.
+
+    Retrying with backoff is appropriate.
+    """
+    pass
+
+
 @dataclass
 class LLMResponse:
     """Standardized response from any LLM provider."""

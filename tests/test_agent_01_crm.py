@@ -750,3 +750,47 @@ class TestCRMAgentPagination:
         # "shared_call" should appear only once
         shared_count = sum(1 for r in records if r["id"] == "shared_call")
         assert shared_count == 1
+
+
+# --- Tests: SSL Configuration (Fix #3) ---
+
+
+class TestCRMAgentSSL:
+
+    def test_ssl_disabled_by_default(self, tmp_path):
+        """Without CRM_CA_BUNDLE, SSL verification should be False."""
+        with patch("agents.agent_01_audio.httpx.Client") as mock_client_class, \
+             patch.dict(os.environ, {}, clear=False):
+            # Ensure CRM_CA_BUNDLE is not set
+            os.environ.pop("CRM_CA_BUNDLE", None)
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+            agent = CRMAgent(
+                api_token="test-token",
+                download_folder=str(tmp_path / "audio"),
+            )
+            assert agent._ssl_verify is False
+
+    def test_ssl_uses_ca_bundle(self, tmp_path):
+        """With CRM_CA_BUNDLE set, should use that path for SSL verification."""
+        with patch("agents.agent_01_audio.httpx.Client") as mock_client_class, \
+             patch.dict(os.environ, {"CRM_CA_BUNDLE": "/path/to/ca.crt"}):
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+            agent = CRMAgent(
+                api_token="test-token",
+                download_folder=str(tmp_path / "audio"),
+            )
+            assert agent._ssl_verify == "/path/to/ca.crt"
+
+    def test_ssl_empty_ca_bundle_disables(self, tmp_path):
+        """Empty CRM_CA_BUNDLE should disable SSL verification."""
+        with patch("agents.agent_01_audio.httpx.Client") as mock_client_class, \
+             patch.dict(os.environ, {"CRM_CA_BUNDLE": "  "}):
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+            agent = CRMAgent(
+                api_token="test-token",
+                download_folder=str(tmp_path / "audio"),
+            )
+            assert agent._ssl_verify is False

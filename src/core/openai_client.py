@@ -13,7 +13,11 @@ from typing import Dict, Optional
 
 from openai import OpenAI
 
-from core.base_llm import BaseLLM, LLMResponse
+from core.base_llm import (
+    BaseLLM, LLMResponse,
+    LLMQuotaExhaustedError, LLMRateLimitError,
+    LLMInvalidConfigError, LLMServerError,
+)
 
 logger = logging.getLogger("qa_system.core")
 
@@ -82,7 +86,10 @@ class OpenAIClient(BaseLLM):
             kwargs["response_format"] = {"type": "json_object"}
 
         start = time.time()
-        response = self._client.chat.completions.create(**kwargs)
+        try:
+            response = self._client.chat.completions.create(**kwargs)
+        except Exception as e:
+            self._classify_and_raise(e)
         elapsed = time.time() - start
 
         # Parse response
@@ -140,3 +147,48 @@ class OpenAIClient(BaseLLM):
             except Exception as e:
                 logger.warning(f"Health check failed for {self._provider}: {e}")
                 return False
+
+    def _classify_and_raise(self, exc: Exception) -> None:
+        """Classify an OpenAI SDK exception into a typed LLM error and re-raise.
+
+        Fix #5: Maps HTTP status codes and error messages to the
+        appropriate LLMError subclass for smart fallback handling.
+        """
+        msg = str(exc).lower()
+
+        # OpenAI SDK wraps HTTP errors in openai.APIStatusError subclasses
+        status_code = getattr(exc, "status_code", None)
+
+        if status_code == 401 or "authentication" in msg or "invalid api key" in msg:
+            raise LLMInvalidConfigError(
+                f"[{self._provider}] Authentication failed: {exc}"
+            ) from exc
+
+        if status_code == 429:
+            # Distinguish quota exhaustion from rate limiting
+            if "quota" in msg or "billing" in msg or "exceeded" in msg:
+                raise LLMQuotaExhaustedError(
+                    f"[{self._provider}] Quota exhausted: {exc}"
+                ) from exc
+            retry_after = getattr(exc, "headers", {})
+            if hasattr(retry_after, "get"):
+                retry_after = float(retry_after.get("retry-after", 0)) or None
+            else:
+                retry_after = None
+            raise LLMRateLimitError(
+                f"[{self._provider}] Rate limited: {exc}",
+                retry_after=retry_after,
+            ) from exc
+
+        if status_code is not None and status_code >= 500:
+            raise LLMServerError(
+                f"[{self._provider}] Server error ({status_code}): {exc}"
+            ) from exc
+
+        if "model" in msg and ("not found" in msg or "does not exist" in msg):
+            raise LLMInvalidConfigError(
+                f"[{self._provider}] Model not found: {exc}"
+            ) from exc
+
+        # Re-raise unknown errors as-is
+        raise

@@ -16,7 +16,7 @@ from typing import Dict, List, Tuple, Optional
 import re
 import logging
 
-from utils import load_criteria
+from utils import load_criteria, safe_log_filename
 from core.model_factory import ModelFactory
 from prompts.templates import PromptLoader
 from processing.transcript_cleaner import TranscriptCleaner
@@ -58,8 +58,11 @@ class QualityManagementAgent:
         """
         self.EVALUATION_CRITERIA = load_criteria(criteria_path)
 
-        # Processing pipeline
-        self._cleaner = TranscriptCleaner()
+        # Processing pipeline — Fix #6: direction-keyed cleaner cache
+        self._cleaners: Dict[str, TranscriptCleaner] = {
+            "outbound": TranscriptCleaner(direction="outbound"),
+            "inbound": TranscriptCleaner(direction="inbound"),
+        }
         self._redactor = PIIRedactor()
         # HIGH-4: Pass actual pricing from primary provider, not token_limits
         self._counter = TokenCounter(
@@ -152,7 +155,7 @@ class QualityManagementAgent:
         word_count = len(transcript.split()) if transcript else 0
         if word_count < self.MIN_TRANSCRIPT_WORDS:
             logger.warning(
-                f"Transcript too short for {filename}: {word_count} words "
+                f"Transcript too short for {safe_log_filename(filename)}: {word_count} words "
                 f"(min {self.MIN_TRANSCRIPT_WORDS}). Skipping LLM call."
             )
             _, call_type = self.detect_call_type(filename, metadata)
@@ -172,19 +175,20 @@ class QualityManagementAgent:
 
         # 1. Clean transcript (normalize speaker labels)
         # MED-11: Use direction from CRM metadata when available
+        # Fix #6: Use cached cleaners instead of creating per-call instances
         direction = (metadata or {}).get("direction", "").lower()
-        if direction in TranscriptCleaner._VALID_DIRECTIONS and direction != self._cleaner.direction:
-            cleaner = TranscriptCleaner(direction=direction)
-            logger.debug(f"Using per-call direction '{direction}' for {filename}")
+        if direction in self._cleaners:
+            cleaner = self._cleaners[direction]
+            logger.debug(f"Using per-call direction '{direction}' for {safe_log_filename(filename)}")
         else:
-            cleaner = self._cleaner
+            cleaner = self._cleaners["outbound"]  # default
         cleaned = cleaner.clean(transcript)
 
         # 2. Redact PII
         redaction = self._redactor.redact(cleaned)
         processed_transcript = redaction["text"]
         if redaction["total_redactions"] > 0:
-            logger.info(f"PII redacted in {filename}: {redaction['pii_found']}")
+            logger.info(f"PII redacted in {safe_log_filename(filename)}: {redaction['pii_found']}")
 
         # 3. Truncate if needed
         chunk_result = self._chunker.truncate(processed_transcript)
@@ -202,7 +206,7 @@ class QualityManagementAgent:
 
         if skipped_criteria:
             logger.info(
-                f"Follow-up call '{filename}': skipped {len(skipped_criteria)} "
+                f"Follow-up call '{safe_log_filename(filename)}': skipped {len(skipped_criteria)} "
                 f"first-call-only criteria: {', '.join(skipped_criteria)}"
             )
 

@@ -214,13 +214,14 @@ class InferenceEngine:
             prompt_hash=prompt_hash,
         )
         if self._enable_cache:
-            # L1: Check in-memory LRU cache first
-            if cache_key in self._memory_cache:
-                self._memory_cache.move_to_end(cache_key)
-                self._memory_hits += 1
-                logger.info(f"L1 memory cache hit for {call_type} evaluation (key={cache_key[:12]})")
-                return self._memory_cache[cache_key]
-            self._memory_misses += 1
+            # L1: Check in-memory LRU cache first (thread-safe read)
+            with self._cache_lock:
+                if cache_key in self._memory_cache:
+                    self._memory_cache.move_to_end(cache_key)
+                    self._memory_hits += 1
+                    logger.info(f"L1 memory cache hit for {call_type} evaluation (key={cache_key[:12]})")
+                    return self._memory_cache[cache_key]
+                self._memory_misses += 1
 
             # L2: Check disk cache
             cached = self._load_cache(cache_key)

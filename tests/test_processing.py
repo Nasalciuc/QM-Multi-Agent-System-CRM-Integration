@@ -14,6 +14,7 @@ from processing.transcript_cleaner import TranscriptCleaner
 from processing.token_counter import TokenCounter
 from processing.chunker import TranscriptChunker
 from processing.pii_redactor import PIIRedactor
+from utils import safe_log_filename
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -312,3 +313,49 @@ class TestPIIRedactor:
         result = redactor.redact("Ship to 456 Oak Avenue please.")
         assert "[ADDRESS]" in result["text"]
         assert "456 Oak Avenue" not in result["text"]
+
+
+# ═══════════════════════════════════════════════════════════════════
+# safe_log_filename (Fix #1)
+# ═══════════════════════════════════════════════════════════════════
+
+class TestSafeLogFilename:
+
+    def test_basic_filename(self):
+        result = safe_log_filename("call_recording.mp3")
+        assert result.endswith(".mp3")
+        assert "call_recording" in result
+
+    def test_strips_directory_path(self):
+        result = safe_log_filename("/home/user/data/audio/secret.mp3")
+        assert "home" not in result
+        assert "user" not in result
+        assert "secret" in result
+
+    def test_empty_returns_unknown(self):
+        assert safe_log_filename("") == "unknown"
+
+    def test_special_chars_replaced(self):
+        result = safe_log_filename("John Doe (call #1).mp3")
+        assert " " not in result
+        assert "(" not in result
+        assert "#" not in result
+
+    def test_deterministic_hash(self):
+        """Same input should always produce the same output."""
+        a = safe_log_filename("test.mp3")
+        b = safe_log_filename("test.mp3")
+        assert a == b
+
+    def test_different_files_different_hashes(self):
+        a = safe_log_filename("call_a.mp3")
+        b = safe_log_filename("call_b.mp3")
+        assert a != b
+
+    def test_preserves_extension(self):
+        result = safe_log_filename("recording.wav")
+        assert result.endswith(".wav")
+
+    def test_no_consecutive_underscores(self):
+        result = safe_log_filename("a   b---c.mp3")
+        assert "__" not in result

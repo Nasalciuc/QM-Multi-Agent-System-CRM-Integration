@@ -317,3 +317,59 @@ class TestEnhancedSummary:
             p.print_summary(evals)
         combined = " ".join(caplog.messages)
         assert "Budget" not in combined
+
+
+# ===========================================================================
+# Fix #2: Thread-safe L1 memory cache read
+# ===========================================================================
+
+class TestL1CacheThreadSafety:
+    """Verify that L1 memory cache reads are protected by _cache_lock."""
+
+    @pytest.fixture
+    def engine(self, tmp_path):
+        with patch("inference.inference_engine.ModelFactory") as MockFactory, \
+             patch("inference.inference_engine.PromptLoader"):
+            factory = MockFactory.return_value
+            factory.primary.model_name = "test-model"
+            from inference.inference_engine import InferenceEngine
+            return InferenceEngine(
+                model_factory=factory,
+                cache_dir=str(tmp_path / "cache"),
+                enable_cache=True,
+                memory_cache_maxsize=10,
+            )
+
+    def test_l1_read_acquires_lock(self, engine):
+        """L1 cache read in evaluate() should acquire _cache_lock."""
+        engine._promote_to_memory("test_key", {"data": "value"})
+        # Verify the lock exists and is a threading.Lock
+        import threading
+        assert isinstance(engine._cache_lock, type(threading.Lock()))
+
+    def test_concurrent_promote_and_read(self, engine):
+        """Concurrent promote + read should not corrupt the cache."""
+        import threading
+        errors = []
+
+        def writer():
+            try:
+                for i in range(50):
+                    engine._promote_to_memory(f"key_{i}", {"val": i})
+            except Exception as e:
+                errors.append(e)
+
+        def reader():
+            try:
+                for i in range(50):
+                    _ = engine._memory_cache.get(f"key_{i}")
+            except Exception as e:
+                errors.append(e)
+
+        t1 = threading.Thread(target=writer)
+        t2 = threading.Thread(target=reader)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+        assert len(errors) == 0

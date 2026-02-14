@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+
+<html lang="en" class="light-style">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="IE=edge,chrome=1">
+    <meta name="description" content="Very special page">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <meta name="csrf-token" content="puVc7rMfM0cFOrGo8dn9BZn1xWiV7wMBbyvvS7mE">
+
+    <title>CRM - BuyBusinessClass</title>
+
+    <link rel="icon" type="image/x-icon" href="https://static-cdn.buybusinessclass.com/v/bbc/favicon.ico">
+
+    <!-- Main font -->
+    <link href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,500,500i,700,700i,900" rel="stylesheet">
+
+    <!-- Icons. Uncomment required icon fonts -->
+    <link rel="stylesheet" href="/vendor/fonts/fontawesome.css?id=f0acacd78281497e7ac6">
+    <link rel="stylesheet" href="/vendor/fonts/ionicons.css?id=fbc926d0d97a02c47fa7">
+    <link rel="stylesheet" href="/vendor/fonts/linearicons.css?id=9a2987f556bfaa568a2a">
+    <link rel="stylesheet" href="/vendor/fonts/open-iconic.css?id=43aa2f1de48d1a1be2d0">
+    <link rel="stylesheet" href="/vendor/fonts/pe-icon-7-stroke.css?id=dc26a41697dc31d3297d">
+
+    <!-- Core stylesheets -->
+    <link rel="stylesheet" href="/vendor/css/bootstrap.css?id=f25d1321d829d8c32c55">
+    <link rel="stylesheet" href="/vendor/css/appwork.css?id=14bdc6d48894762d040f">
+    <link rel="stylesheet" href="/vendor/css/theme-corporate.css?id=e1d74a6e9c1301e252e3">
+    <link rel="stylesheet" href="/vendor/css/colors.css?id=1f88f16bf449d3fb5f29">
+    <link rel="stylesheet" href="/vendor/css/uikit.css?id=98bd06bf35ac8e2c5d96">
+    <link rel="stylesheet" href="/vendor/css/pages/authentication.css?id=3e2daabfc90497d1cf79">
+
+    <!-- Layout helpers -->
+    <script src="/vendor/js/layout-helpers.js?id=61ef0684919c6633270f"></script>
+
+    <!-- Core scripts -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+
+        </head>
+<body>
+
+    <div class="page-loader"><div class="bg-primary"></div></div>
+
+        <style>
+        .login-wrapper {
+            display: flex;
+            min-height: 100vh;
+            background: white;
+            overflow: hidden;
+        }
+
+        .login-left-wrapper {
+            flex: 1;
+            position: relative;
+            background: transparent;
+            overflow: hidden;
+        }
+
+        .login-left {
+            width: 100%;
+            height: 100%;
+            background-color: #7b96d4;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            /* Magia se întâmplă aici */
+            clip-path: ellipse(100% 95% at 0% 50%);
+        }
+
+        .login-left img {
+            max-width: 80%;
+            height: auto;
+        }
+
+        .login-right {
+            flex: 1;
+            background-color: #fff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 40px;
+            position: relative;
+            /* AICI ADĂUGI */
+        }
+
+        .login-right .logo {
+            max-height: 40px;
+            margin-bottom: 30px;
+            align-self: flex-end;
+        }
+
+        .login-form {
+            max-width: 400px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .login-form h2 {
+            font-size: 42px;
+            font-weight: 600;
+        }
+
+        .login-form p {
+            color: #444;
+            margin-bottom: 30px;
+
+        }
+
+        .form-control {
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            height: 45px;
+        }
+
+        .btn-login {
+            width: 100%;
+            background-color: #4b65c1;
+            color: #fff;
+            border: none;
+            height: 45px;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+
+        .btn-login:hover {
+            background-color: #3a53aa;
+            color: white;
+        }
+    </style>
+
+    <div class="login-wrapper">
+        <div class="login-left-wrapper">
+            <div class="login-left">
+                <img src="/img/bg/auth/c.png" alt="Login illustration">
+            </div>
+        </div>
+
+        <div class="login-right">
+            <div style="position: absolute; top: 30px; right: 40px;">
+                <img src="https://static-cdn.buybusinessclass.com/v/bbc/logo-dark.png"
+                    style="height: 40px;">
+            </div>
+
+            <div class="login-form">
+                <h2>System sign-in</h2>
+                <p>Customer Relationship Management</p>
+
+                <form id="login_form" method="POST" action="/login">
+                    <input type="hidden" name="_token" value="puVc7rMfM0cFOrGo8dn9BZn1xWiV7wMBbyvvS7mE">                    <div class="form-group mb-3">
+                        <label>Name</label>
+                        <input type="text" class="form-control " name="name"
+                            value="" required autofocus>
+                                            </div>
+
+                    <div class="form-group mb-4">
+                        <label>Password</label>
+                        <input type="password" class="form-control " name="password"
+                            required>
+                                            </div>
+
+                    <button type="submit" class="btn btn-login">
+                        Sign In
+                        <span class="spinner spinner-border spinner-border-sm d-none ml-2" role="status"
+                            aria-hidden="true"></span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+        <script>
+        $('#login_form').submit(function () {
+            const btn = $(this).find('button[type=submit]');
+            btn.prop('disabled', true);
+            btn.find('.spinner').removeClass('d-none');
+        });
+    </script>
+</body>
+</html>

@@ -334,3 +334,36 @@ class TestEvaluateCallDirection:
         transcript = "Speaker 0: " + " ".join(["hello"] * 30) + "\nSpeaker 1: hi there"
         result = agent.evaluate_call(transcript, "call1.mp3")
         assert "error" not in result
+
+
+# --- Tests: Fix #6 — TranscriptCleaner direction cache ---
+
+class TestCleanerCache:
+
+    def test_cleaner_cache_has_two_entries(self, agent):
+        """Fix #6: Agent should have pre-built cleaners for both directions."""
+        assert "outbound" in agent._cleaners
+        assert "inbound" in agent._cleaners
+        assert len(agent._cleaners) == 2
+
+    def test_cleaner_cache_reused(self, agent):
+        """Fix #6: Same cleaner instance should be reused across calls."""
+        cleaner_inbound = agent._cleaners["inbound"]
+        cleaner_outbound = agent._cleaners["outbound"]
+
+        # Call evaluate_call with inbound metadata
+        agent._engine.evaluate = MagicMock(return_value={
+            "criteria": {"greeting_prepared": {"score": "YES", "evidence": "OK"}},
+            "overall_assessment": "Good", "strengths": [], "improvements": [],
+            "critical_gaps": [], "call_type": "First Call", "model_used": "test",
+            "provider_used": "test", "tokens_used": {"input": 0, "output": 0},
+            "cost_usd": 0.0, "eval_time_seconds": 0.1,
+        })
+
+        transcript = "Speaker 0: " + " ".join(["hello"] * 30) + "\nSpeaker 1: hi there"
+        agent.evaluate_call(transcript, "call1.mp3", metadata={"direction": "inbound"})
+        agent.evaluate_call(transcript, "call2.mp3", metadata={"direction": "outbound"})
+
+        # Cleaners should still be the same instances (not recreated)
+        assert agent._cleaners["inbound"] is cleaner_inbound
+        assert agent._cleaners["outbound"] is cleaner_outbound

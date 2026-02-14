@@ -11,7 +11,11 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from core.model_factory import ModelFactory
-from core.base_llm import LLMResponse
+from core.base_llm import (
+    LLMResponse,
+    LLMQuotaExhaustedError, LLMRateLimitError,
+    LLMInvalidConfigError, LLMServerError,
+)
 
 
 # --- Fixtures ---
@@ -201,3 +205,108 @@ class TestFallbackBehavior:
 
             with pytest.raises(RuntimeError, match="All LLM providers failed"):
                 factory.chat_with_fallback("sys", "usr")
+
+
+# --- Tests: Typed Exception Handling (Fix #5) ---
+
+
+class TestTypedExceptionHandling:
+
+    def test_quota_exhausted_disables_provider(self, models_config):
+        """LLMQuotaExhaustedError should disable the provider and fall through."""
+        with patch.dict(os.environ, {"TEST_PRIMARY_KEY": "k1", "TEST_FALLBACK_KEY": "k2"}):
+            factory = ModelFactory(config_path=models_config)
+            factory.providers[0].chat = MagicMock(
+                side_effect=LLMQuotaExhaustedError("quota gone")
+            )
+            fallback_resp = LLMResponse(
+                text="ok", input_tokens=10, output_tokens=5,
+                cost_usd=0.001, model="fallback-model",
+                provider="test-fallback", elapsed_seconds=0.5,
+            )
+            factory.providers[1].chat = MagicMock(return_value=fallback_resp)
+
+            result = factory.chat_with_fallback("sys", "usr")
+            assert result.provider == "test-fallback"
+            assert "test-primary" in factory._disabled_providers
+
+    def test_invalid_config_disables_provider(self, models_config):
+        """LLMInvalidConfigError should disable the provider."""
+        with patch.dict(os.environ, {"TEST_PRIMARY_KEY": "k1", "TEST_FALLBACK_KEY": "k2"}):
+            factory = ModelFactory(config_path=models_config)
+            factory.providers[0].chat = MagicMock(
+                side_effect=LLMInvalidConfigError("bad key")
+            )
+            fallback_resp = LLMResponse(
+                text="ok", input_tokens=10, output_tokens=5,
+                cost_usd=0.001, model="fallback-model",
+                provider="test-fallback", elapsed_seconds=0.5,
+            )
+            factory.providers[1].chat = MagicMock(return_value=fallback_resp)
+
+            result = factory.chat_with_fallback("sys", "usr")
+            assert result.provider == "test-fallback"
+            assert "test-primary" in factory._disabled_providers
+
+    def test_disabled_provider_skipped_on_next_call(self, models_config):
+        """A disabled provider should be skipped on subsequent calls."""
+        with patch.dict(os.environ, {"TEST_PRIMARY_KEY": "k1", "TEST_FALLBACK_KEY": "k2"}):
+            factory = ModelFactory(config_path=models_config)
+            factory._disabled_providers.add("test-primary")
+            fallback_resp = LLMResponse(
+                text="ok", input_tokens=10, output_tokens=5,
+                cost_usd=0.001, model="fallback-model",
+                provider="test-fallback", elapsed_seconds=0.5,
+            )
+            factory.providers[1].chat = MagicMock(return_value=fallback_resp)
+            factory.providers[0].chat = MagicMock()
+
+            result = factory.chat_with_fallback("sys", "usr")
+            assert result.provider == "test-fallback"
+            # Primary should NOT have been called
+            factory.providers[0].chat.assert_not_called()
+
+    def test_reset_disabled_providers(self, models_config):
+        """reset_disabled_providers() should clear the disabled set."""
+        with patch.dict(os.environ, {"TEST_PRIMARY_KEY": "k1", "TEST_FALLBACK_KEY": "k2"}):
+            factory = ModelFactory(config_path=models_config)
+            factory._disabled_providers.add("test-primary")
+            factory.reset_disabled_providers()
+            assert len(factory._disabled_providers) == 0
+
+    def test_rate_limit_retries(self, models_config):
+        """LLMRateLimitError should retry once before falling through."""
+        with patch.dict(os.environ, {"TEST_PRIMARY_KEY": "k1", "TEST_FALLBACK_KEY": "k2"}):
+            factory = ModelFactory(config_path=models_config)
+            success_resp = LLMResponse(
+                text="ok", input_tokens=10, output_tokens=5,
+                cost_usd=0.001, model="test-model",
+                provider="test-primary", elapsed_seconds=0.5,
+            )
+            # First call: rate limited, retry succeeds
+            factory.providers[0].chat = MagicMock(
+                side_effect=[LLMRateLimitError("wait", retry_after=0.01), success_resp]
+            )
+            result = factory.chat_with_fallback("sys", "usr")
+            # Called once in loop + once on retry = 2 calls total
+            assert factory.providers[0].chat.call_count == 2
+            assert result.provider == "test-primary"
+
+    def test_server_error_falls_through(self, models_config):
+        """LLMServerError should fall through to fallback."""
+        with patch.dict(os.environ, {"TEST_PRIMARY_KEY": "k1", "TEST_FALLBACK_KEY": "k2"}):
+            factory = ModelFactory(config_path=models_config)
+            factory.providers[0].chat = MagicMock(
+                side_effect=LLMServerError("500 error")
+            )
+            fallback_resp = LLMResponse(
+                text="ok", input_tokens=10, output_tokens=5,
+                cost_usd=0.001, model="fallback-model",
+                provider="test-fallback", elapsed_seconds=0.5,
+            )
+            factory.providers[1].chat = MagicMock(return_value=fallback_resp)
+
+            result = factory.chat_with_fallback("sys", "usr")
+            assert result.provider == "test-fallback"
+            # Provider should NOT be disabled (server error is transient)
+            assert "test-primary" not in factory._disabled_providers

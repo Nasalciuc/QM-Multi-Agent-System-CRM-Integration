@@ -16,6 +16,7 @@ import time
 import logging
 
 from inference.stt_cache import STTCache
+from utils import safe_log_filename
 
 logger = logging.getLogger("qa_system.agents")
 
@@ -336,7 +337,7 @@ class ElevenLabsSTTAgent:
                 logger.debug(f"Transcript saved: {txt_path}")
             return txt_path
         except Exception as e:
-            logger.warning(f"Failed to save transcript for {filename}: {e}")
+            logger.warning(f"Failed to save transcript for {safe_log_filename(filename)}: {e}")
             return None
 
     def transcribe_batch(
@@ -364,7 +365,7 @@ class ElevenLabsSTTAgent:
         for i, audio_path in enumerate(audio_files, 1):
             filename = audio_path.name
             print(f"  Transcribing {i} of {total}: {filename}...", end="\r")
-            logger.info(f"Transcribing {i}/{total}: {filename}")
+            logger.info(f"Transcribing {i}/{total}: {safe_log_filename(filename)}")
 
             # Get duration for cost estimate
             duration = self._get_duration(audio_path)
@@ -399,7 +400,7 @@ class ElevenLabsSTTAgent:
                     "cached": True,
                     "transcript_path": str(saved_path) if saved_path else None,
                 }
-                logger.info(f"  CACHED: {filename} (skipped API call, saved ${estimated_cost:.4f})")
+                logger.info(f"  CACHED: {safe_log_filename(filename)} (skipped API call, saved ${estimated_cost:.4f})")
                 continue
             # ── End cache check ──────────────────────────────────────
 
@@ -439,7 +440,7 @@ class ElevenLabsSTTAgent:
                     "cached": False,
                     "transcript_path": str(saved_path) if saved_path else None,
                 }
-                logger.info(f"  OK: {filename} ({duration or 0:.1f} min, {elapsed:.1f}s)")
+                logger.info(f"  OK: {safe_log_filename(filename)} ({duration or 0:.1f} min, {elapsed:.1f}s)")
 
                 # CRIT-NEW-2: Rate-limit between consecutive API calls
                 if i < total and delay_between_calls > 0:
@@ -464,7 +465,7 @@ class ElevenLabsSTTAgent:
                     "duration": duration,
                     "process_time": round(elapsed, 2)
                 }
-                logger.error(f"  FAIL: {filename} - {e}")
+                logger.error(f"  FAIL: {safe_log_filename(filename)} - {e}")
 
         # Summary
         success = sum(1 for v in transcripts.values() if v["status"] == "Success")

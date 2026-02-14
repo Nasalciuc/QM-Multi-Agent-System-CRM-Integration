@@ -15,7 +15,11 @@ from typing import List, Optional
 import yaml
 from pathlib import Path
 
-from core.base_llm import BaseLLM, LLMResponse
+from core.base_llm import (
+    BaseLLM, LLMResponse,
+    LLMQuotaExhaustedError, LLMRateLimitError,
+    LLMInvalidConfigError, LLMServerError,
+)
 from core.openai_client import OpenAIClient
 
 logger = logging.getLogger("qa_system.core")
@@ -34,6 +38,7 @@ class ModelFactory:
         self._config = self._load_config(config_path)
         self._providers: List[BaseLLM] = []
         self._primary: Optional[BaseLLM] = None
+        self._disabled_providers: set = set()  # Fix #5: providers disabled at runtime
         self._build_providers()
 
     # ── Public API ──────────────────────────────────────────────────
@@ -66,6 +71,20 @@ class ModelFactory:
             return self._primary.pricing
         return {"input_per_1m": 0.0, "output_per_1m": 0.0}
 
+    def reset_disabled_providers(self) -> None:
+        """Re-enable all providers that were disabled during a previous run.
+
+        Fix #5: Call this at the start of each pipeline run so that
+        providers disabled due to quota or config errors in a previous
+        run get another chance.
+        """
+        if self._disabled_providers:
+            logger.info(
+                f"Re-enabling {len(self._disabled_providers)} previously "
+                f"disabled provider(s): {self._disabled_providers}"
+            )
+            self._disabled_providers.clear()
+
     def chat_with_fallback(
         self,
         system_prompt: str,
@@ -92,6 +111,11 @@ class ModelFactory:
         errors = []
 
         for provider in self._providers:
+            # Fix #5: Skip providers disabled at runtime
+            if provider.provider_name in self._disabled_providers:
+                logger.debug(f"Skipping disabled provider: {provider.provider_name}")
+                continue
+
             try:
                 logger.info(f"Trying provider: {provider.provider_name} ({provider.model_name})")
                 response = provider.chat(
@@ -107,6 +131,43 @@ class ModelFactory:
                         f"(primary {self._primary.provider_name} was unavailable)"
                     )
                 return response
+
+            except (LLMQuotaExhaustedError, LLMInvalidConfigError) as e:
+                # Hard stop — disable this provider for the rest of the run
+                self._disabled_providers.add(provider.provider_name)
+                logger.error(
+                    f"Provider {provider.provider_name} disabled: {e}"
+                )
+                errors.append((provider.provider_name, str(e)))
+                continue
+
+            except LLMRateLimitError as e:
+                # Retry after backoff
+                delay = e.retry_after or 2.0
+                logger.warning(
+                    f"Provider {provider.provider_name} rate limited. "
+                    f"Retrying in {delay}s..."
+                )
+                import time
+                time.sleep(delay)
+                try:
+                    response = provider.chat(
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        json_mode=json_mode,
+                    )
+                    return response
+                except Exception as retry_e:
+                    logger.warning(f"Provider {provider.provider_name} retry failed: {retry_e}")
+                    errors.append((provider.provider_name, str(retry_e)))
+                    continue
+
+            except LLMServerError as e:
+                logger.warning(f"Provider {provider.provider_name} server error: {e}")
+                errors.append((provider.provider_name, str(e)))
+                continue
 
             except Exception as e:
                 logger.warning(f"Provider {provider.provider_name} failed: {e}")

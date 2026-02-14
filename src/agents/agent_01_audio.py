@@ -111,13 +111,26 @@ class CRMAgent:
         self.agent_id = agent_id
         self.download_folder.mkdir(parents=True, exist_ok=True)
 
+        # SSL verification: use CRM_CA_BUNDLE env var if set, else disable
+        # verification for self-signed certificates
+        ca_bundle = os.environ.get("CRM_CA_BUNDLE", "").strip()
+        if ca_bundle:
+            self._ssl_verify = ca_bundle
+            logger.info(f"CRMAgent SSL: using custom CA bundle from CRM_CA_BUNDLE")
+        else:
+            self._ssl_verify = False
+            logger.warning(
+                "CRMAgent SSL verification disabled (no CRM_CA_BUNDLE env var). "
+                "Set CRM_CA_BUNDLE to a CA bundle path for production use."
+            )
+
         self._client = httpx.Client(
             timeout=30,
             headers={
                 "Authorization": f"Bearer {self.api_token}",
                 "Accept": "application/json",
             },
-            verify=False,  # Disable SSL verification for self-signed certs
+            verify=self._ssl_verify,
         )
         self._last_query_truncated = False  # CRIT-2: Flag set when pagination detects truncation
         logger.info(
@@ -356,7 +369,7 @@ class CRMAgent:
                     "GET",
                     recording_url,
                     timeout=60,
-                    verify=False,
+                    verify=self._ssl_verify,
                     follow_redirects=True,
                 ) as stream:
                     if stream.status_code == 401:
