@@ -336,3 +336,53 @@ class TestAudioValidation:
         with caplog.at_level(logging.WARNING):
             agent.validate_audio_file(weird)  # Should not raise
         assert "Unrecognised audio header" in caplog.text
+
+
+# ═══════════════════════════════════════════════════════════════════
+# MED-01: ElevenLabs Retry Verification
+# ═══════════════════════════════════════════════════════════════════
+
+class TestElevenLabsRetry:
+    """Verify the existing retry/no-retry logic in transcribe()."""
+
+    @pytest.fixture
+    def agent(self, tmp_path):
+        mock_client = MagicMock()
+        a = ElevenLabsSTTAgent(
+            client=mock_client,
+            persist_transcripts=False,
+            enable_stt_cache=False,
+        )
+        a.MAX_RETRIES = 2
+        a.RETRY_BACKOFF_BASE = 0  # no real sleeping
+        return a
+
+    @patch("agents.agent_02_transcription.time.sleep")
+    def test_transcribe_retries_on_429(self, mock_sleep, agent, tmp_path):
+        """429 (rate limit) should trigger retry, not immediate raise."""
+        audio = tmp_path / "call.mp3"
+        audio.write_bytes(b"ID3\x04\x00\x00" + b"\x00" * 100)
+
+        rate_limit_err = Exception("rate_limit_exceeded: too many requests")
+        good_result = _make_scribe_v2_result(text="Hello world")
+
+        agent._call_api_with_timeout = MagicMock(
+            side_effect=[rate_limit_err, good_result]
+        )
+        result = agent.transcribe(audio)
+        assert agent._call_api_with_timeout.call_count == 2
+        assert result["text"]  # got a valid transcript
+        assert mock_sleep.called
+
+    def test_transcribe_no_retry_on_auth_error(self, agent, tmp_path):
+        """Auth errors (unauthorized) should raise immediately, no retry."""
+        audio = tmp_path / "call.mp3"
+        audio.write_bytes(b"ID3\x04\x00\x00" + b"\x00" * 100)
+
+        auth_err = Exception("unauthorized: invalid API key")
+        agent._call_api_with_timeout = MagicMock(side_effect=auth_err)
+
+        with pytest.raises(Exception, match="unauthorized"):
+            agent.transcribe(audio)
+        # Should fail on first attempt without retrying
+        assert agent._call_api_with_timeout.call_count == 1
