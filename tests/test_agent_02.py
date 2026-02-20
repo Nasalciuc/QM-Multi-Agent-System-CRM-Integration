@@ -354,7 +354,8 @@ class TestElevenLabsRetry:
             enable_stt_cache=False,
         )
         a.MAX_RETRIES = 2
-        a.RETRY_BACKOFF_BASE = 0  # no real sleeping
+        # Patch the retry backoff to avoid sleeping in tests
+        a.RETRY_BACKOFF_BASE = 2  # Standard backoff value for patching
         return a
 
     @patch("agents.agent_02_transcription.time.sleep")

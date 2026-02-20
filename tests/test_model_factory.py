@@ -18,6 +18,16 @@ from core.base_llm import (
 )
 
 
+class CustomException(Exception):
+    """Custom exception with response and status_code attributes for testing."""
+    def __init__(self, message, response=None, status_code=None):
+        super().__init__(message)
+        self.response = response
+        # Only set status_code if explicitly provided
+        if status_code is not None:
+            self.status_code = status_code
+
+
 # --- Fixtures ---
 
 @pytest.fixture
@@ -361,10 +371,10 @@ class TestHTTP402StatusExtraction:
         from core.openai_client import OpenAIClient
 
         # Create mock exception where status_code is ONLY on .response
-        mock_exc = Exception("Error code: 402 - Payment Required")
         mock_response = MagicMock()
         mock_response.status_code = 402
-        mock_exc.response = mock_response
+        mock_exc = CustomException("Error code: 402 - Payment Required", response=mock_response)
+
         # Ensure direct status_code is not set
         assert not hasattr(mock_exc, "status_code")
 
@@ -378,8 +388,7 @@ class TestHTTP402StatusExtraction:
         """402 directly on exc.status_code should also raise LLMQuotaExhaustedError."""
         from core.openai_client import OpenAIClient
 
-        mock_exc = Exception("requires more credits")
-        mock_exc.status_code = 402
+        mock_exc = CustomException("requires more credits", status_code=402)
 
         client = MagicMock(spec=OpenAIClient)
         client._provider = "test-openrouter"
