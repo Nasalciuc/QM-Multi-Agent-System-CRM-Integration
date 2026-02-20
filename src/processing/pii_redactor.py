@@ -106,6 +106,21 @@ _PNR_PATTERN = re.compile(
     r"\b(?=[A-Z0-9]*[0-9])[A-Z0-9]{6}\b"
 )
 
+# HIGH-07: International phone numbers: +XX XXXX XXXXXX (various formats)
+_INTL_PHONE_PATTERN = re.compile(
+    r'\+\d{1,3}[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{2,4}[\s.-]?\d{2,4}[\s.-]?\d{0,4}'
+)
+
+# HIGH-07: Passport numbers with 1-2 letter prefix + 6-8 digits
+_INTL_PASSPORT_PATTERN = re.compile(
+    r'\b[A-Z]{1,2}\d{6,8}\b'
+)
+
+# HIGH-07: Frequent flyer / loyalty program: 2-3 letters + 8-12 digits
+_LOYALTY_PATTERN = re.compile(
+    r'\b[A-Z]{2,3}[-]?\d{8,12}\b'
+)
+
 # Replacement tokens
 _REPLACEMENTS = {
     "phone": "[PHONE]",
@@ -117,6 +132,9 @@ _REPLACEMENTS = {
     "passport": "[PASSPORT]",
     "address": "[ADDRESS]",
     "pnr": "[BOOKING_REF]",
+    "intl_phone": "[PHONE]",
+    "intl_passport": "[PASSPORT]",
+    "loyalty": "[LOYALTY_ID]",
 }
 
 
@@ -141,6 +159,9 @@ class PIIRedactor:
         redact_passport: bool = True,
         redact_address: bool = True,
         redact_pnr: bool = True,
+        redact_intl_phone: bool = True,
+        redact_intl_passport: bool = True,
+        redact_loyalty: bool = True,
     ):
         self.redact_phones = redact_phones
         self.redact_emails = redact_emails
@@ -151,6 +172,9 @@ class PIIRedactor:
         self.redact_passport = redact_passport
         self.redact_address = redact_address
         self.redact_pnr = redact_pnr
+        self.redact_intl_phone = redact_intl_phone
+        self.redact_intl_passport = redact_intl_passport
+        self.redact_loyalty = redact_loyalty
 
     def redact(self, text: str) -> Dict:
         """Redact all configured PII types from text.
@@ -168,7 +192,8 @@ class PIIRedactor:
             return {"text": "", "pii_found": {}, "total_redactions": 0}
 
         counts = {"phone": 0, "email": 0, "credit_card": 0, "ssn": 0,
-                  "spelled_pii": 0, "dob": 0, "passport": 0, "address": 0, "pnr": 0}
+                  "spelled_pii": 0, "dob": 0, "passport": 0, "address": 0, "pnr": 0,
+                  "intl_phone": 0, "intl_passport": 0, "loyalty": 0}
 
         # Order matters: SSN before phone (SSN is more specific)
         if self.redact_ssn:
@@ -188,6 +213,11 @@ class PIIRedactor:
             text, n = _EMAIL_PATTERN.subn(_REPLACEMENTS["email"], text)
             counts["email"] = n
 
+        # HIGH-07: International phone BEFORE domestic phone (more specific)
+        if self.redact_intl_phone:
+            text, n = _INTL_PHONE_PATTERN.subn(_REPLACEMENTS["intl_phone"], text)
+            counts["intl_phone"] = n
+
         if self.redact_phones:
             text, n = _PHONE_PATTERN.subn(_REPLACEMENTS["phone"], text)
             counts["phone"] = n
@@ -195,10 +225,20 @@ class PIIRedactor:
             text, n2 = _PHONE_NOSEP_PATTERN.subn(_REPLACEMENTS["phone"], text)
             counts["phone"] += n2
 
+        # HIGH-07: International passport (1-2 letter prefix)
+        if self.redact_intl_passport:
+            text, n = _INTL_PASSPORT_PATTERN.subn(_REPLACEMENTS["intl_passport"], text)
+            counts["intl_passport"] = n
+
         # #4: Passport numbers
         if self.redact_passport:
             text, n = _PASSPORT_PATTERN.subn(_REPLACEMENTS["passport"], text)
             counts["passport"] = n
+
+        # HIGH-07: Loyalty / frequent flyer numbers
+        if self.redact_loyalty:
+            text, n = _LOYALTY_PATTERN.subn(_REPLACEMENTS["loyalty"], text)
+            counts["loyalty"] = n
 
         # #4: Street addresses
         if self.redact_address:

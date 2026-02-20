@@ -292,12 +292,14 @@ class TestPIIRedactor:
         assert "15-01-1990" not in result["text"]
 
     def test_redact_passport(self):
-        """#31: Passport numbers should be redacted."""
+        """#31: Passport numbers should be redacted (by intl or domestic pattern)."""
         redactor = PIIRedactor()
         result = redactor.redact("My passport is A12345678.")
-        assert "[PASSPORT]" in result["text"]
+        # May be caught by intl_passport (1-2 letter prefix) or domestic passport
+        assert "[PASSPORT]" in result["text"] or "[PASSPORT]" in result["text"]
         assert "A12345678" not in result["text"]
-        assert result["pii_found"]["passport"] >= 1
+        total_passport = result["pii_found"]["passport"] + result["pii_found"]["intl_passport"]
+        assert total_passport >= 1
 
     def test_redact_address(self):
         """#31: Street addresses should be redacted."""
@@ -373,3 +375,46 @@ class TestSafeLogFilename:
     def test_no_consecutive_underscores(self):
         result = safe_log_filename("a   b---c.mp3")
         assert "__" not in result
+
+
+# ═══════════════════════════════════════════════════════════════════
+# HIGH-07: International PII patterns
+# ═══════════════════════════════════════════════════════════════════
+
+class TestPIIInternationalPatterns:
+    """Verify international PII redaction added in HIGH-07."""
+
+    def test_uk_phone_number_redacted(self):
+        redactor = PIIRedactor()
+        result = redactor.redact("Call me on +44 20 7946 0958 please")
+        assert "[PHONE]" in result["text"]
+        assert "+44" not in result["text"]
+        assert result["pii_found"]["intl_phone"] >= 1
+
+    def test_eu_phone_number_redacted(self):
+        redactor = PIIRedactor()
+        result = redactor.redact("Mein Nummer ist +49 30 1234567")
+        assert "[PHONE]" in result["text"]
+        assert "+49" not in result["text"]
+        assert result["pii_found"]["intl_phone"] >= 1
+
+    def test_passport_two_letter_prefix_redacted(self):
+        redactor = PIIRedactor()
+        result = redactor.redact("My passport is AB1234567")
+        assert "[PASSPORT]" in result["text"]
+        assert "AB1234567" not in result["text"]
+        assert result["pii_found"]["intl_passport"] >= 1
+
+    def test_loyalty_number_redacted(self):
+        redactor = PIIRedactor()
+        result = redactor.redact("My frequent flyer number is FF123456789012")
+        assert "[LOYALTY_ID]" in result["text"]
+        assert "FF123456789012" not in result["text"]
+        assert result["pii_found"]["loyalty"] >= 1
+
+    def test_short_codes_preserved(self):
+        """Short numeric codes (< 6 digits) should NOT be redacted."""
+        redactor = PIIRedactor()
+        result = redactor.redact("Please press 1 for sales or enter code 4523")
+        assert "1" in result["text"]
+        assert "4523" in result["text"]
