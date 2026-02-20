@@ -70,6 +70,14 @@ jobs:
       - name: Ruff check
         run: ruff check src/ tests/ --output-format=github
 
+      # BONUS: Fail if verify=False sneaks back into production code
+      - name: Check for verify=False
+        run: |
+          if grep -rn 'verify\s*=\s*False' src/ --include='*.py'; then
+            echo "::error::Found verify=False in src/ — use CRM_CA_BUNDLE env var instead"
+            exit 1
+          fi
+
   # #16: Type checking with mypy
   typecheck:
     runs-on: ubuntu-latest
