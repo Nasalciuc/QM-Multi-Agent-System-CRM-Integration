@@ -28,6 +28,23 @@ FILLER_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# REAL-01 / REAL-11: Patterns that indicate a speaker is an AGENT
+# (self-introduction, calling from company, role declaration)
+_AGENT_INTRO_PATTERNS = [
+    re.compile(r"\bmy name is \w+", re.IGNORECASE),
+    re.compile(r"\bthis is \w+\s+(?:from|calling|with)\b", re.IGNORECASE),
+    re.compile(r"\bI'?m calling (?:from|on behalf)\b", re.IGNORECASE),
+    re.compile(r"\bI'?ll be your\b.+?(?:advisor|expert|agent|consultant|specialist)", re.IGNORECASE),
+    re.compile(r"\bcalling from\b", re.IGNORECASE),
+]
+
+# REAL-01: Patterns that indicate a speaker is a CLIENT (answering the phone)
+_CLIENT_ANSWER_PATTERNS = [
+    re.compile(r"^(?:hello|hi|hey|yes|yeah|yo)\s*[.?!,]?\s*$", re.IGNORECASE),
+    re.compile(r"\bwho(?:'s| is) (?:this|calling)\b", re.IGNORECASE),
+    re.compile(r"\bhow did you get (?:my|this) number\b", re.IGNORECASE),
+]
+
 
 class TranscriptCleaner:
     """Normalize and clean transcripts from ElevenLabs Scribe.
@@ -92,8 +109,9 @@ class TranscriptCleaner:
     def _normalize_speakers(self, text: str) -> str:
         """Convert 'Speaker N:' labels to 'Agent:' / 'Client:'.
 
-        Auto-detects which speaker number maps to Agent based on
-        call direction and which speaker appears first.
+        REAL-01: Detects agent by self-introduction patterns (\"my name is\",
+        \"calling from\") rather than assuming first speaker = agent.
+        Falls back to direction-based heuristic when no intro is found.
 
         SPEAKER-03: If >2 speakers detected, identifies the top 2 by line count
         and merges all minor speakers into the closest major speaker.
@@ -144,13 +162,23 @@ class TranscriptCleaner:
         else:
             merge_map = {}
 
-        # Determine mapping based on direction
-        if self.direction == "outbound":
-            # Outbound: first speaker = Agent
-            agent_speaker = first_speaker
-        else:
-            # Inbound: first speaker = Client
-            agent_speaker = first_speaker
+        # REAL-01: Determine agent_speaker by self-introduction, NOT position.
+        # Scan first 15 lines for agent intro patterns.
+        agent_speaker = self._detect_agent_by_intro(lines, merge_map)
+        detection_method = "intro"
+
+        if agent_speaker is None:
+            # Fallback: direction-based heuristic (old behaviour)
+            # For BOTH directions, the person who answers is NOT the agent.
+            # Outbound: agent calls → client picks up first → agent is second.
+            # Inbound: client calls → client speaks first → agent is second.
+            second_speaker = self._detect_second_speaker(lines, first_speaker)
+            agent_speaker = second_speaker if second_speaker else first_speaker
+            detection_method = "position"
+            logger.debug(
+                f"REAL-01: No agent intro found, falling back to position "
+                f"heuristic ({self.direction}): agent={agent_speaker}"
+            )
 
         result_lines = []
         speakers_seen = set()
@@ -164,16 +192,19 @@ class TranscriptCleaner:
                 # Remap minor speaker to its merge target
                 effective_id = merge_map.get(speaker_id, speaker_id)
 
-                if self.direction == "outbound":
-                    label = "Agent" if effective_id == agent_speaker else "Client"
-                else:
-                    label = "Client" if effective_id == agent_speaker else "Agent"
+                # REAL-01: Unified logic — agent_speaker is always the agent
+                label = "Agent" if effective_id == agent_speaker else "Client"
 
                 line = re.sub(r"^Speaker\s*\d+\s*:\s*", f"{label}: ", line, flags=re.IGNORECASE)
 
             result_lines.append(line)
 
-        return "\n".join(result_lines)
+        labeled_text = "\n".join(result_lines)
+
+        # REAL-11: Post-labeling validation — warn if Client line has agent intro
+        self._validate_speaker_labels(result_lines, detection_method)
+
+        return labeled_text
 
     @staticmethod
     def _build_merge_map(lines: list, major_speakers: set) -> dict:
@@ -222,6 +253,74 @@ class TranscriptCleaner:
             if match:
                 return match.group(1).lower()
         return None
+
+    @staticmethod
+    def _detect_second_speaker(lines: list, first_speaker: str) -> Optional[str]:
+        """Find the second distinct 'Speaker N:' label in the transcript."""
+        for line in lines:
+            match = re.match(r"^(Speaker\s*\d+)\s*:", line, re.IGNORECASE)
+            if match:
+                sid = match.group(1).lower()
+                if sid != first_speaker:
+                    return sid
+        return None
+
+    @staticmethod
+    def _detect_agent_by_intro(
+        lines: list, merge_map: dict, scan_lines: int = 15,
+    ) -> Optional[str]:
+        """REAL-01: Identify the agent by self-introduction patterns.
+
+        Scans the first *scan_lines* speaker lines for phrases like
+        "my name is …", "this is … calling from", etc.
+
+        Returns the (effective) speaker_id of the agent, or None if
+        no introduction pattern was found.
+        """
+        scanned = 0
+        for line in lines:
+            match = re.match(r"^(Speaker\s*(\d+))\s*:\s*(.+)", line, re.IGNORECASE)
+            if not match:
+                continue
+            scanned += 1
+            if scanned > scan_lines:
+                break
+            speaker_id = match.group(1).lower()
+            content = match.group(3)
+            effective = merge_map.get(speaker_id, speaker_id)
+            for pattern in _AGENT_INTRO_PATTERNS:
+                if pattern.search(content):
+                    logger.debug(
+                        f"REAL-01: Agent detected by intro pattern on {speaker_id}: "
+                        f"{pattern.pattern!r}"
+                    )
+                    return effective
+        return None
+
+    @staticmethod
+    def _validate_speaker_labels(
+        labeled_lines: list, detection_method: str,
+    ) -> None:
+        """REAL-11: Post-labeling sanity check.
+
+        Scans Client:-labeled lines for agent intro patterns.
+        If found, it means the agent was likely on the wrong speaker channel
+        (e.g. Shiva introduced herself on Speaker 0 which was labeled Client).
+
+        Only logs a warning — does NOT re-assign labels — so human reviewers
+        can flag the call for manual inspection.
+        """
+        for line in labeled_lines:
+            if not line.lower().startswith("client:"):
+                continue
+            content = line.split(":", 1)[1] if ":" in line else ""
+            for pattern in _AGENT_INTRO_PATTERNS:
+                if pattern.search(content):
+                    logger.warning(
+                        f"REAL-11: Agent intro detected on Client-labeled line "
+                        f"(detection={detection_method}): {line[:120]!r}"
+                    )
+                    return  # One warning per call is enough
 
     @staticmethod
     def _remove_fillers(text: str) -> str:

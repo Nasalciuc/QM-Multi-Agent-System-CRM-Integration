@@ -25,12 +25,17 @@ class TestTranscriptCleaner:
 
     # --- Speaker Normalisation ---
 
-    def test_outbound_first_speaker_is_agent(self):
+    def test_outbound_second_speaker_is_agent(self):
+        """REAL-01: Without intro patterns, second speaker = agent (both directions)."""
         cleaner = TranscriptCleaner(direction="outbound")
         raw = "Speaker 0: Hi there\nSpeaker 1: Hello"
         result = cleaner.clean(raw)
-        assert result.startswith("Agent:")
-        assert "Client:" in result
+        # REAL-01: No intro found → second speaker (Speaker 1) = Agent
+        assert result.startswith("Client:")
+        assert "Agent:" in result
+        lines = result.strip().split("\n")
+        assert lines[0].startswith("Client:")
+        assert lines[1].startswith("Agent:")
 
     def test_inbound_first_speaker_is_client(self):
         cleaner = TranscriptCleaner(direction="inbound")
@@ -47,14 +52,16 @@ class TestTranscriptCleaner:
         assert "Client:" in result
 
     def test_multiple_speakers(self):
+        """REAL-01: Without intro, second speaker = Agent."""
         cleaner = TranscriptCleaner(direction="outbound")
         raw = "Speaker 0: A\nSpeaker 1: B\nSpeaker 0: C\nSpeaker 1: D"
         result = cleaner.clean(raw)
         lines = result.strip().split("\n")
-        assert lines[0].startswith("Agent:")
-        assert lines[1].startswith("Client:")
-        assert lines[2].startswith("Agent:")
-        assert lines[3].startswith("Client:")
+        # REAL-01: Speaker 0 = Client (first), Speaker 1 = Agent (second)
+        assert lines[0].startswith("Client:")
+        assert lines[1].startswith("Agent:")
+        assert lines[2].startswith("Client:")
+        assert lines[3].startswith("Agent:")
 
     # --- Filler Removal ---
 
@@ -133,12 +140,11 @@ class TestTranscriptCleaner:
         labels = {l.split(":")[0] for l in lines}
         assert labels == {"Agent", "Client"}
 
-    def test_three_speakers_minor_becomes_client(self):
-        """SPEAKER-03: Minor speaker merges into nearest major speaker."""
+    def test_three_speakers_minor_merges_to_nearest(self):
+        """SPEAKER-03 + REAL-01: Minor speaker merges into nearest major speaker."""
         cleaner = TranscriptCleaner(direction="outbound", remove_fillers=False)
-        # Speaker 0 = Agent (most lines, appears first)
-        # Speaker 1 = Client (second most lines)
-        # Speaker 2 = minor → should merge toward Client (nearest preceding major)
+        # REAL-01: Speaker 0 = Client (first), Speaker 1 = Agent (second)
+        # Speaker 2 = minor → merges to nearest preceding major (Speaker 1 = Agent)
         raw = (
             "Speaker 0: Hello\n"
             "Speaker 1: Hi I need flights\n"
@@ -150,22 +156,24 @@ class TestTranscriptCleaner:
         )
         result = cleaner.clean(raw)
         lines = result.strip().split("\n")
-        # Speaker 2 should become Client (merged with nearest Speaker 1)
+        # Every line must be either Agent: or Client:
         for line in lines:
             assert line.startswith("Agent:") or line.startswith("Client:"), f"Unexpected label: {line}"
-        # "Also want hotels" should be Client
+        # "Also want hotels" merges to nearest major = Speaker 1 = Agent
         hotel_line = [l for l in lines if "Also want hotels" in l][0]
-        assert hotel_line.startswith("Client:")
+        assert hotel_line.startswith("Agent:")
 
     def test_two_speakers_unchanged(self):
-        """SPEAKER-03: Exactly 2 speakers should not trigger merging."""
+        """SPEAKER-03: Exactly 2 speakers should not trigger merging.
+        REAL-01: Second speaker = Agent when no intro pattern detected."""
         cleaner = TranscriptCleaner(direction="outbound", remove_fillers=False)
         raw = "Speaker 0: Hi\nSpeaker 1: Hello\nSpeaker 0: How are you"
         result = cleaner.clean(raw)
         lines = result.strip().split("\n")
-        assert lines[0].startswith("Agent:")
-        assert lines[1].startswith("Client:")
-        assert lines[2].startswith("Agent:")
+        # REAL-01: Speaker 0 = Client (first), Speaker 1 = Agent (second)
+        assert lines[0].startswith("Client:")
+        assert lines[1].startswith("Agent:")
+        assert lines[2].startswith("Client:")
 
 
 # ═══════════════════════════════════════════════════════════════════

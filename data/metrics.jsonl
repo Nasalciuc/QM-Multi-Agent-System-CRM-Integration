@@ -124,3 +124,95 @@
 {"timestamp": "2026-02-20T12:20:41Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
 {"timestamp": "2026-02-20T12:20:42Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
 {"timestamp": "2026-02-20T12:20:42Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:34:53Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 78.5, "llm_cost": 0.006, "stt_cost": 0.5, "total_cost": 0.506}
+{"timestamp": "2026-02-20T12:34:53Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 90.0, "llm_cost": 0.005, "stt_cost": 0.5, "total_cost": 0.505}
+{"timestamp": "2026-02-20T12:34:53Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 90.0, "llm_cost": 0.005, "stt_cost": 0.0, "total_cost": 0.005}
+{"timestamp": "2026-02-20T12:34:56Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 50.0, "llm_cost": 0.025, "stt_cost": 0.005, "total_cost": 0.03}
+{"timestamp": "2026-02-20T12:34:56Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 50.0, "llm_cost": 0.05, "stt_cost": 0.008, "total_cost": 0.058}
+{"timestamp": "2026-02-20T12:34:56Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 50.0, "llm_cost": 0.025, "stt_cost": 0.005, "total_cost": 0.03}
+{"timestamp": "2026-02-20T12:35:11Z", "event": "provider_disabled", "provider": "test-primary", "reason": "quota gone"}
+{"timestamp": "2026-02-20T12:35:13Z", "event": "provider_disabled", "provider": "test-primary", "reason": "bad key"}
+{"timestamp": "2026-02-20T12:35:21Z", "event": "provider_disabled", "provider": "test-primary", "reason": "credits exhausted"}
+{"timestamp": "2026-02-20T12:35:22Z", "event": "provider_disabled", "provider": "test-primary", "reason": "not a valid model ID"}
+{"timestamp": "2026-02-20T12:35:22Z", "event": "llm_error", "provider": "test-openrouter", "error_type": "CustomException", "status_code": 402}
+{"timestamp": "2026-02-20T12:35:22Z", "event": "llm_error", "provider": "test-openrouter", "error_type": "CustomException", "status_code": 402}
+{"timestamp": "2026-02-20T12:35:23Z", "event": "provider_disabled", "provider": "test-primary", "reason": "[openrouter] Payment required / credits exhausted: 402"}
+{"timestamp": "2026-02-20T12:35:23Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:35:23Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:35:23Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 85.0, "llm_cost": 0.03, "stt_cost": 0.02, "total_cost": 0.05}
+{"timestamp": "2026-02-20T12:35:23Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:35:23Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:35:24Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.08, "stt_cost": 0.02, "total_cost": 0.1}
+{"timestamp": "2026-02-20T12:35:24Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:35:24Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:35:24Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:35:24Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:41:25Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 78.5, "llm_cost": 0.006, "stt_cost": 0.5, "total_cost": 0.506}
+{"timestamp": "2026-02-20T12:41:25Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 90.0, "llm_cost": 0.005, "stt_cost": 0.5, "total_cost": 0.505}
+{"timestamp": "2026-02-20T12:41:25Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 90.0, "llm_cost": 0.005, "stt_cost": 0.0, "total_cost": 0.005}
+{"timestamp": "2026-02-20T12:41:28Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 50.0, "llm_cost": 0.025, "stt_cost": 0.005, "total_cost": 0.03}
+{"timestamp": "2026-02-20T12:41:28Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 50.0, "llm_cost": 0.05, "stt_cost": 0.008, "total_cost": 0.058}
+{"timestamp": "2026-02-20T12:41:28Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 50.0, "llm_cost": 0.025, "stt_cost": 0.005, "total_cost": 0.03}
+{"timestamp": "2026-02-20T12:41:43Z", "event": "provider_disabled", "provider": "test-primary", "reason": "quota gone"}
+{"timestamp": "2026-02-20T12:41:44Z", "event": "provider_disabled", "provider": "test-primary", "reason": "bad key"}
+{"timestamp": "2026-02-20T12:41:48Z", "event": "provider_disabled", "provider": "test-primary", "reason": "credits exhausted"}
+{"timestamp": "2026-02-20T12:41:48Z", "event": "provider_disabled", "provider": "test-primary", "reason": "not a valid model ID"}
+{"timestamp": "2026-02-20T12:41:48Z", "event": "llm_error", "provider": "test-openrouter", "error_type": "CustomException", "status_code": 402}
+{"timestamp": "2026-02-20T12:41:48Z", "event": "llm_error", "provider": "test-openrouter", "error_type": "CustomException", "status_code": 402}
+{"timestamp": "2026-02-20T12:41:49Z", "event": "provider_disabled", "provider": "test-primary", "reason": "[openrouter] Payment required / credits exhausted: 402"}
+{"timestamp": "2026-02-20T12:41:49Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:41:49Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:41:49Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 85.0, "llm_cost": 0.03, "stt_cost": 0.02, "total_cost": 0.05}
+{"timestamp": "2026-02-20T12:41:49Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:41:49Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:41:49Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.08, "stt_cost": 0.02, "total_cost": 0.1}
+{"timestamp": "2026-02-20T12:41:49Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:41:49Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:41:49Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:41:49Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:44:39Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 78.5, "llm_cost": 0.006, "stt_cost": 0.5, "total_cost": 0.506}
+{"timestamp": "2026-02-20T12:44:39Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 90.0, "llm_cost": 0.005, "stt_cost": 0.5, "total_cost": 0.505}
+{"timestamp": "2026-02-20T12:44:39Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 90.0, "llm_cost": 0.005, "stt_cost": 0.0, "total_cost": 0.005}
+{"timestamp": "2026-02-20T12:44:41Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 50.0, "llm_cost": 0.025, "stt_cost": 0.005, "total_cost": 0.03}
+{"timestamp": "2026-02-20T12:44:41Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 50.0, "llm_cost": 0.05, "stt_cost": 0.008, "total_cost": 0.058}
+{"timestamp": "2026-02-20T12:44:41Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 50.0, "llm_cost": 0.025, "stt_cost": 0.005, "total_cost": 0.03}
+{"timestamp": "2026-02-20T12:44:56Z", "event": "provider_disabled", "provider": "test-primary", "reason": "quota gone"}
+{"timestamp": "2026-02-20T12:44:57Z", "event": "provider_disabled", "provider": "test-primary", "reason": "bad key"}
+{"timestamp": "2026-02-20T12:45:07Z", "event": "provider_disabled", "provider": "test-primary", "reason": "credits exhausted"}
+{"timestamp": "2026-02-20T12:45:08Z", "event": "provider_disabled", "provider": "test-primary", "reason": "not a valid model ID"}
+{"timestamp": "2026-02-20T12:45:08Z", "event": "llm_error", "provider": "test-openrouter", "error_type": "CustomException", "status_code": 402}
+{"timestamp": "2026-02-20T12:45:08Z", "event": "llm_error", "provider": "test-openrouter", "error_type": "CustomException", "status_code": 402}
+{"timestamp": "2026-02-20T12:45:09Z", "event": "provider_disabled", "provider": "test-primary", "reason": "[openrouter] Payment required / credits exhausted: 402"}
+{"timestamp": "2026-02-20T12:45:09Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:45:09Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:45:09Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 85.0, "llm_cost": 0.03, "stt_cost": 0.02, "total_cost": 0.05}
+{"timestamp": "2026-02-20T12:45:09Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:45:09Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:45:09Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.08, "stt_cost": 0.02, "total_cost": 0.1}
+{"timestamp": "2026-02-20T12:45:09Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:45:09Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:45:09Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:45:09Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:58:48Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 78.5, "llm_cost": 0.006, "stt_cost": 0.5, "total_cost": 0.506}
+{"timestamp": "2026-02-20T12:58:48Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 90.0, "llm_cost": 0.005, "stt_cost": 0.5, "total_cost": 0.505}
+{"timestamp": "2026-02-20T12:58:48Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 90.0, "llm_cost": 0.005, "stt_cost": 0.0, "total_cost": 0.005}
+{"timestamp": "2026-02-20T12:58:50Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 50.0, "llm_cost": 0.025, "stt_cost": 0.005, "total_cost": 0.03}
+{"timestamp": "2026-02-20T12:58:50Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 50.0, "llm_cost": 0.05, "stt_cost": 0.008, "total_cost": 0.058}
+{"timestamp": "2026-02-20T12:58:50Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 50.0, "llm_cost": 0.025, "stt_cost": 0.005, "total_cost": 0.03}
+{"timestamp": "2026-02-20T12:58:55Z", "event": "provider_disabled", "provider": "test-primary", "reason": "quota gone"}
+{"timestamp": "2026-02-20T12:58:56Z", "event": "provider_disabled", "provider": "test-primary", "reason": "bad key"}
+{"timestamp": "2026-02-20T12:59:00Z", "event": "provider_disabled", "provider": "test-primary", "reason": "credits exhausted"}
+{"timestamp": "2026-02-20T12:59:01Z", "event": "provider_disabled", "provider": "test-primary", "reason": "not a valid model ID"}
+{"timestamp": "2026-02-20T12:59:01Z", "event": "llm_error", "provider": "test-openrouter", "error_type": "CustomException", "status_code": 402}
+{"timestamp": "2026-02-20T12:59:01Z", "event": "llm_error", "provider": "test-openrouter", "error_type": "CustomException", "status_code": 402}
+{"timestamp": "2026-02-20T12:59:01Z", "event": "provider_disabled", "provider": "test-primary", "reason": "[openrouter] Payment required / credits exhausted: 402"}
+{"timestamp": "2026-02-20T12:59:01Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:59:01Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:59:02Z", "event": "pipeline_complete", "evaluations": 1, "avg_score": 85.0, "llm_cost": 0.03, "stt_cost": 0.02, "total_cost": 0.05}
+{"timestamp": "2026-02-20T12:59:02Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:59:02Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:59:02Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.08, "stt_cost": 0.02, "total_cost": 0.1}
+{"timestamp": "2026-02-20T12:59:02Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:59:02Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:59:02Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}
+{"timestamp": "2026-02-20T12:59:02Z", "event": "pipeline_complete", "evaluations": 2, "avg_score": 85.0, "llm_cost": 0.06, "stt_cost": 0.02, "total_cost": 0.08}

@@ -2,9 +2,9 @@
 Transcript Chunker
 
 Handles transcripts that exceed the LLM's token limit by:
-  - Truncating with smart preservation (keep beginning + end)
-  - The beginning contains greeting/intro criteria
-  - The end contains closing/farewell criteria
+  - Truncating with smart preservation (keep beginning + middle + end)
+  - REAL-07: The beginning contains greeting/intro criteria,
+    the middle contains negotiation/presentation, the end contains closing.
 
 Start with truncation; chunk-and-merge scoring is a future option.
 """
@@ -18,9 +18,10 @@ logger = logging.getLogger("qa_system.processing")
 
 TRUNCATION_MARKER = "\n\n[...transcript truncated due to length...]\n\n"
 
-# Default ratios for preserving call structure (greeting at start, closing at end)
-DEFAULT_KEEP_START_RATIO = 0.6
-DEFAULT_KEEP_END_RATIO = 0.4
+# REAL-07: 30% beginning (greeting+interview) + 40% middle (negotiation) + 30% end (closing)
+DEFAULT_KEEP_START_RATIO = 0.30
+DEFAULT_KEEP_MIDDLE_RATIO = 0.40
+DEFAULT_KEEP_END_RATIO = 0.30
 
 
 class TranscriptChunker:
@@ -37,26 +38,29 @@ class TranscriptChunker:
         self,
         max_tokens: int = 30000,
         keep_start_ratio: float = DEFAULT_KEEP_START_RATIO,
+        keep_middle_ratio: float = DEFAULT_KEEP_MIDDLE_RATIO,
         keep_end_ratio: float = DEFAULT_KEEP_END_RATIO,
         token_counter: Optional[TokenCounter] = None,
     ):
         """
         Args:
             max_tokens: Maximum token count for output.
-            keep_start_ratio: Fraction of budget for the beginning (greeting criteria).
+            keep_start_ratio: Fraction of budget for the beginning (greeting/interview).
+            keep_middle_ratio: Fraction of budget for the middle (negotiation/presentation).
             keep_end_ratio: Fraction of budget for the end (closing criteria).
             token_counter: TokenCounter instance. Created if not provided.
         """
         self.max_tokens = max_tokens
         self.keep_start_ratio = keep_start_ratio
+        self.keep_middle_ratio = keep_middle_ratio
         self.keep_end_ratio = keep_end_ratio
         self._counter = token_counter or TokenCounter()
 
     def truncate(self, transcript: str) -> dict:
         """Truncate transcript if it exceeds max_tokens.
 
-        Preserves the beginning and end of the call (which contain
-        greeting and closing evaluation criteria).
+        REAL-07: Preserves beginning (30%), middle (40%), and end (30%)
+        of the call so negotiation/presentation content is not lost.
 
         Returns:
             Dict with:
@@ -77,15 +81,17 @@ class TranscriptChunker:
                 "removed_tokens": 0,
             }
 
-        # Reserve tokens for the truncation marker
-        marker_tokens = self._counter.count_tokens(TRUNCATION_MARKER)
+        # Reserve tokens for TWO truncation markers
+        marker_tokens = self._counter.count_tokens(TRUNCATION_MARKER) * 2
         budget = self.max_tokens - marker_tokens
 
         start_budget = int(budget * self.keep_start_ratio)
-        end_budget = budget - start_budget
+        middle_budget = int(budget * self.keep_middle_ratio)
+        end_budget = budget - start_budget - middle_budget
 
         # Split by lines to avoid cutting mid-sentence
         lines = transcript.split("\n")
+        total_lines = len(lines)
 
         # Build start portion
         start_lines = []
@@ -96,6 +102,7 @@ class TranscriptChunker:
                 break
             start_lines.append(line)
             start_tokens += line_tokens
+        start_end_idx = len(start_lines)
 
         # Build end portion (from the end)
         end_lines = []
@@ -106,9 +113,50 @@ class TranscriptChunker:
                 break
             end_lines.insert(0, line)
             end_tokens += line_tokens
+        end_start_idx = total_lines - len(end_lines)
 
-        # Combine
-        truncated_text = "\n".join(start_lines) + TRUNCATION_MARKER + "\n".join(end_lines)
+        # Build middle portion (centered in the gap between start and end)
+        if start_end_idx < end_start_idx:
+            gap_lines = lines[start_end_idx:end_start_idx]
+            mid_point = len(gap_lines) // 2
+            middle_lines = []
+            middle_tokens = 0
+            # Expand outward from midpoint
+            left = mid_point
+            right = mid_point
+            while left >= 0 or right < len(gap_lines):
+                # Try right
+                if right < len(gap_lines):
+                    lt = self._counter.count_tokens(gap_lines[right] + "\n")
+                    if middle_tokens + lt <= middle_budget:
+                        middle_lines.append((right, gap_lines[right]))
+                        middle_tokens += lt
+                    right += 1
+                # Try left
+                if left >= 0 and left != mid_point:
+                    lt = self._counter.count_tokens(gap_lines[left] + "\n")
+                    if middle_tokens + lt <= middle_budget:
+                        middle_lines.append((left, gap_lines[left]))
+                        middle_tokens += lt
+                    left -= 1
+                else:
+                    left -= 1
+                if middle_tokens >= middle_budget:
+                    break
+            # Sort by position for correct order
+            middle_lines.sort(key=lambda x: x[0])
+            middle_text = [line for _, line in middle_lines]
+        else:
+            middle_text = []
+
+        # Combine with markers
+        parts = ["\n".join(start_lines)]
+        parts.append(TRUNCATION_MARKER)
+        if middle_text:
+            parts.append("\n".join(middle_text))
+            parts.append(TRUNCATION_MARKER)
+        parts.append("\n".join(end_lines))
+        truncated_text = "".join(parts)
         final_tokens = self._counter.count_tokens(truncated_text)
 
         logger.warning(

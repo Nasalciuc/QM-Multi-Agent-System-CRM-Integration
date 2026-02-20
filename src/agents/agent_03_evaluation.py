@@ -64,9 +64,11 @@ class QualityManagementAgent:
         self.EVALUATION_CRITERIA = load_criteria(criteria_path)
 
         # Processing pipeline — Fix #6: direction-keyed cleaner cache
+        # REAL-06: Use remove_fillers=False so LLM sees exact wording for
+        # verbatim evidence quotes that match the original transcript.
         self._cleaners: Dict[str, TranscriptCleaner] = {
-            "outbound": TranscriptCleaner(direction="outbound"),
-            "inbound": TranscriptCleaner(direction="inbound"),
+            "outbound": TranscriptCleaner(direction="outbound", remove_fillers=False),
+            "inbound": TranscriptCleaner(direction="inbound", remove_fillers=False),
         }
         self._redactor = PIIRedactor()
         # HIGH-4: Pass actual pricing from primary provider, not token_limits
@@ -147,6 +149,32 @@ class QualityManagementAgent:
         is_followup = any(indicator in filename_lower for indicator in follow_up_indicators)
         call_type = "Follow-up Call" if is_followup else "First Call"
         return is_followup, call_type
+
+    @staticmethod
+    def detect_agents_in_transcript(cleaned_transcript: str) -> List[str]:
+        """REAL-02: Detect multiple agents in a transcript via self-introduction.
+
+        Scans Agent:-labeled lines for "my name is X", "this is X calling/from",
+        etc. Returns list of distinct agent names found.
+        """
+        intro_patterns = [
+            re.compile(r"\bmy name is (\w+)", re.IGNORECASE),
+            re.compile(r"\bthis is (\w+)\s+(?:from|calling|with)\b", re.IGNORECASE),
+            re.compile(r"\bI'?m (\w+)\s+(?:from|calling|with)\b", re.IGNORECASE),
+        ]
+        agents: list = []
+        seen: set = set()
+        for line in cleaned_transcript.split("\n"):
+            if not line.lower().startswith("agent:"):
+                continue
+            for pattern in intro_patterns:
+                m = pattern.search(line)
+                if m:
+                    name = m.group(1).capitalize()
+                    if name.lower() not in seen:
+                        seen.add(name.lower())
+                        agents.append(name)
+        return agents
 
     def evaluate_call(self, transcript: str, filename: str, max_retries: int = 2,
                       metadata: Optional[Dict] = None) -> Dict:
@@ -249,6 +277,19 @@ class QualityManagementAgent:
         if redaction["total_redactions"] > 0:
             evaluation["pii_redacted"] = redaction["pii_found"]
 
+        # REAL-02: Multi-agent detection
+        agents_detected = self.detect_agents_in_transcript(cleaned)
+        if len(agents_detected) > 1:
+            evaluation["agents_detected"] = agents_detected
+            evaluation.setdefault("critical_gaps", []).append(
+                f"MULTI_AGENT: {len(agents_detected)} agents detected in call — "
+                f"{', '.join(agents_detected)}. QA score may mix multiple agents' performance."
+            )
+            logger.warning(
+                f"REAL-02: Multi-agent call detected in {safe_log_filename(filename)}: "
+                f"{agents_detected}"
+            )
+
         return evaluation
 
     def calculate_score(self, evaluation: Dict) -> Dict:
@@ -331,6 +372,9 @@ class QualityManagementAgent:
         Expects cleaned transcripts with Agent:/Client: labels
         (produced by TranscriptCleaner). Lines without recognized
         speaker labels are skipped.
+
+        REAL-03: Includes sanity checks for impossible ratios that
+        suggest speaker mapping issues.
         """
         lines = transcript.strip().split("\n")
         agent_words = 0
@@ -352,11 +396,37 @@ class QualityManagementAgent:
             # Skip unlabeled lines
 
         total = agent_words + client_words
+
+        # REAL-03: Sanity checks
         if total == 0:
-            return {"agent_percentage": 50.0, "client_percentage": 50.0, "total_words": 0}
+            return {"agent_percentage": 50.0, "client_percentage": 50.0,
+                    "total_words": 0, "ratio_warning": "no_labeled_lines"}
+
+        if agent_words == 0:
+            logger.warning(
+                "REAL-03: Listening ratio — agent has 0 words. "
+                "Likely speaker mapping issue."
+            )
+            return {"agent_percentage": 0.0, "client_percentage": 100.0,
+                    "total_words": total, "ratio_warning": "agent_zero_words"}
+
+        if client_words == 0:
+            logger.warning(
+                "REAL-03: Listening ratio — client has 0 words. "
+                "Likely speaker mapping issue."
+            )
+            return {"agent_percentage": 100.0, "client_percentage": 0.0,
+                    "total_words": total, "ratio_warning": "client_zero_words"}
+
+        agent_pct = round(agent_words / total * 100, 1)
+        if agent_pct > 95 or agent_pct < 5:
+            logger.warning(
+                f"REAL-03: Extreme listening ratio ({agent_pct}% agent) — "
+                f"possible speaker mapping issue"
+            )
 
         return {
-            "agent_percentage": round(agent_words / total * 100, 1),
+            "agent_percentage": agent_pct,
             "client_percentage": round(client_words / total * 100, 1),
             "total_words": total,
         }

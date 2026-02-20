@@ -112,6 +112,25 @@ _PNR_PATTERN = re.compile(
     r"\b(?=[A-Z0-9]*[0-9])[A-Z0-9]{6}\b"
 )
 
+# REAL-08: Common airline/airport codes to exempt from PNR redaction
+_AVIATION_CODES = {
+    # Major airlines
+    "EVA", "ANA", "JAL", "SIA", "CPA", "KAL", "AAL", "DAL", "UAL",
+    # Major airports (IATA 3-letter codes are only 3 chars, won't match PNR,
+    # but flight numbers like "EVA123" can)
+}
+
+# REAL-04: NATO / phonetic alphabet spelling — "D as in Denver, A, Alpha, N Nancy"
+_NATO_SPELLED_PATTERN = re.compile(
+    r"(?:[A-Za-z]\s*(?:,\s*)?(?:as in|for|like)\s+\w+[,.\s]*){4,}",
+    re.IGNORECASE,
+)
+
+# REAL-04: Simple letter enumeration — "D, A, N, N, Y" (4+ single uppercase letters)
+_LETTER_ENUM_PATTERN = re.compile(
+    r"(?<!\w)(?:[A-Z]\s*,\s*){4,}[A-Z](?!\w)"
+)
+
 # HIGH-07: International phone numbers: +XX XXXX XXXXXX (various formats)
 _INTL_PHONE_PATTERN = re.compile(
     r'\+\d{1,3}[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{2,4}[\s.-]?\d{2,4}[\s.-]?\d{0,4}'
@@ -120,6 +139,12 @@ _INTL_PHONE_PATTERN = re.compile(
 # HIGH-07: Frequent flyer / loyalty program: 2-3 letters + 8-12 digits
 _LOYALTY_PATTERN = re.compile(
     r'\b[A-Z]{2,3}[-]?\d{8,12}\b'
+)
+
+# REAL-05: Spoken digit words for multi-line phone reconstruction
+_DIGIT_WORD_PATTERN = re.compile(
+    r"\b(?:" + "|".join(_SPELLED_PHONE_WORDS) + r")\b",
+    re.IGNORECASE,
 )
 
 # Replacement tokens
@@ -135,6 +160,8 @@ _REPLACEMENTS = {
     "pnr": "[BOOKING_REF]",
     "intl_phone": "[PHONE]",
     "loyalty": "[LOYALTY_ID]",
+    "nato_spelled": "[SPELLED_PII]",
+    "multiline_phone": "[PHONE]",
 }
 
 
@@ -161,6 +188,9 @@ class PIIRedactor:
         redact_pnr: bool = True,
         redact_intl_phone: bool = True,
         redact_loyalty: bool = True,
+        redact_nato_spelled: bool = True,
+        redact_multiline_phone: bool = True,
+        redact_prices: bool = False,
     ):
         self.redact_phones = redact_phones
         self.redact_emails = redact_emails
@@ -173,6 +203,9 @@ class PIIRedactor:
         self.redact_pnr = redact_pnr
         self.redact_intl_phone = redact_intl_phone
         self.redact_loyalty = redact_loyalty
+        self.redact_nato_spelled = redact_nato_spelled
+        self.redact_multiline_phone = redact_multiline_phone
+        self.redact_prices = redact_prices
 
     def redact(self, text: str) -> Dict:
         """Redact all configured PII types from text.
@@ -191,7 +224,8 @@ class PIIRedactor:
 
         counts = {"phone": 0, "email": 0, "credit_card": 0, "ssn": 0,
                   "spelled_pii": 0, "dob": 0, "passport": 0, "address": 0, "pnr": 0,
-                  "intl_phone": 0, "loyalty": 0}
+                  "intl_phone": 0, "loyalty": 0, "nato_spelled": 0,
+                  "multiline_phone": 0}
 
         # Order matters: SSN before phone (SSN is more specific)
         if self.redact_ssn:
@@ -239,8 +273,9 @@ class PIIRedactor:
             counts["address"] = n
 
         # PNR / booking references (after address, before spelled_pii)
+        # REAL-08: Exempt known aviation codes
         if self.redact_pnr:
-            text, n = _PNR_PATTERN.subn(_REPLACEMENTS["pnr"], text)
+            text, n = self._redact_pnr(text)
             counts["pnr"] = n
 
         # CRIT-3: Spelled-out PII (common in call center recordings)
@@ -249,6 +284,23 @@ class PIIRedactor:
             counts["spelled_pii"] += n
             text, n = _SPELLED_PHONE_PATTERN.subn(_REPLACEMENTS["spelled_pii"], text)
             counts["spelled_pii"] += n
+
+        # REAL-04: NATO / phonetic alphabet spelling (e.g. "D as in Denver, A Alpha")
+        if self.redact_nato_spelled:
+            text, n = _NATO_SPELLED_PATTERN.subn(_REPLACEMENTS["nato_spelled"], text)
+            counts["nato_spelled"] += n
+            text, n = _LETTER_ENUM_PATTERN.subn(_REPLACEMENTS["nato_spelled"], text)
+            counts["nato_spelled"] += n
+
+        # REAL-05: Multi-line spoken phone numbers
+        if self.redact_multiline_phone:
+            text, n = self._redact_multiline_spoken_phone(text)
+            counts["multiline_phone"] = n
+
+        # REAL-10: Price / monetary amount redaction (off by default)
+        if self.redact_prices:
+            text, n = self._redact_prices(text)
+            counts["price"] = n
 
         total = sum(counts.values())
         if total > 0:
@@ -259,3 +311,108 @@ class PIIRedactor:
             "pii_found": counts,
             "total_redactions": total,
         }
+
+    @staticmethod
+    def _redact_pnr(text: str) -> tuple:
+        """REAL-08: Redact PNR codes but exempt known aviation prefixes.
+
+        Returns (redacted_text, count).
+        """
+        count = 0
+
+        def _pnr_replacer(m: re.Match) -> str:
+            nonlocal count
+            token = m.group(0)
+            # Check if the first 3 chars are a known aviation code
+            prefix3 = token[:3].upper()
+            if prefix3 in _AVIATION_CODES:
+                return token  # exempt
+            count += 1
+            return _REPLACEMENTS["pnr"]
+
+        text = _PNR_PATTERN.sub(_pnr_replacer, text)
+        return text, count
+
+    @staticmethod
+    def _redact_multiline_spoken_phone(text: str) -> tuple:
+        """REAL-05: Detect phone numbers spoken across multiple lines by same speaker.
+
+        Scans for sequences of 7-10+ digit-words within 5 consecutive lines
+        of the same speaker and redacts the digit words.
+
+        Returns (redacted_text, count).
+        """
+        lines = text.split("\n")
+        speaker_re = re.compile(r"^((?:Agent|Client|Speaker\s*\d+)\s*:)\s*(.+)", re.IGNORECASE)
+        redacted_count = 0
+
+        # Build list of (speaker, content, line_index) for speaker lines
+        speaker_lines: list = []
+        for idx, line in enumerate(lines):
+            m = speaker_re.match(line)
+            if m:
+                speaker_lines.append((m.group(1).lower().split(":")[0].strip(), m.group(2), idx))
+
+        # Sliding window: scan consecutive lines of same speaker for digit words
+        i = 0
+        lines_to_redact: set = set()
+        while i < len(speaker_lines):
+            speaker = speaker_lines[i][0]
+            # Collect consecutive window (up to 8 lines, same speaker, within 5 original lines)
+            window = [speaker_lines[i]]
+            j = i + 1
+            while j < len(speaker_lines) and j - i < 8:
+                if speaker_lines[j][2] - speaker_lines[i][2] > 8:
+                    break
+                if speaker_lines[j][0] == speaker:
+                    window.append(speaker_lines[j])
+                j += 1
+
+            # Count digit words across window
+            digit_word_count = 0
+            window_indices = []
+            for spk, content, line_idx in window:
+                dw = _DIGIT_WORD_PATTERN.findall(content)
+                if dw:
+                    digit_word_count += len(dw)
+                    window_indices.append(line_idx)
+
+            if digit_word_count >= 7:
+                lines_to_redact.update(window_indices)
+            i += 1
+
+        # Redact digit words in flagged lines
+        if lines_to_redact:
+            for idx in lines_to_redact:
+                original = lines[idx]
+                redacted = _DIGIT_WORD_PATTERN.sub("[PHONE]", original)
+                if redacted != original:
+                    lines[idx] = redacted
+                    redacted_count += 1
+            text = "\n".join(lines)
+
+        return text, redacted_count
+
+    @staticmethod
+    def _redact_prices(text: str) -> tuple:
+        """REAL-10: Redact monetary amounts (opt-in, off by default).
+
+        Catches: $1,234  /  $1,234.56  /  "four thousand seven hundred"
+
+        Returns (redacted_text, count).
+        """
+        count = 0
+        # Numeric dollar amounts: $1,234 or $1,234.56
+        dollar_pattern = re.compile(r"\$[\d,]+(?:\.\d{2})?")
+        text, n = dollar_pattern.subn("[PRICE]", text)
+        count += n
+
+        # Verbal amounts: "X thousand Y hundred" patterns
+        verbal_pattern = re.compile(
+            r"\b\w+\s+thousand(?:\s+\w+\s+hundred)?(?:\s+(?:and\s+)?\w+)?\s*(?:dollars?)?\b",
+            re.IGNORECASE,
+        )
+        text, n = verbal_pattern.subn("[PRICE]", text)
+        count += n
+
+        return text, count

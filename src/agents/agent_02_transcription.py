@@ -353,11 +353,15 @@ class ElevenLabsSTTAgent:
                 text = word_obj.get("text", "")
                 speaker = word_obj.get("speaker_id")
                 wtype = word_obj.get("type", "word")
+                start_raw = word_obj.get("start")
+                start = float(start_raw) if isinstance(start_raw, (int, float)) else None
             else:
                 text = getattr(word_obj, "text", "")
                 speaker = getattr(word_obj, "speaker_id", None)
                 wtype = getattr(word_obj, "type", "word")
-            parsed_words.append((text, speaker, wtype))
+                start_raw = getattr(word_obj, "start", None)
+                start = float(start_raw) if isinstance(start_raw, (int, float)) else None
+            parsed_words.append((text, speaker, wtype, start))
             if speaker and wtype == "word":
                 speaker_word_counts[speaker] = speaker_word_counts.get(speaker, 0) + 1
 
@@ -381,7 +385,7 @@ class ElevenLabsSTTAgent:
             # Build merge map: minor → nearest preceding major speaker
             last_major = None
             first_major = None
-            for _, speaker, _ in parsed_words:
+            for _, speaker, _, _ in parsed_words:
                 if speaker in top2:
                     if first_major is None:
                         first_major = speaker
@@ -393,16 +397,40 @@ class ElevenLabsSTTAgent:
                 if v is None:
                     merge_map[k] = first_major
 
-        # Second pass: build lines with merged speaker IDs
+        # Second pass: build lines with merged speaker IDs + REAL-12 timestamps
+        # REAL-12: Insert [M:SS] marker when gap between words exceeds 30s
+        _GAP_THRESHOLD_SECS = 30.0
         lines = []
         current_speaker = None
         current_line_words = []
         effective_speakers: set = set()
+        last_word_time: float | None = None
 
-        for text, speaker, wtype in parsed_words:
+        for text, speaker, wtype, start in parsed_words:
             effective = merge_map.get(speaker, speaker) if speaker else speaker
             if effective:
                 effective_speakers.add(effective)
+
+            # REAL-12: Check for large time gap (silence / hold)
+            if (
+                start is not None
+                and last_word_time is not None
+                and wtype == "word"
+                and (start - last_word_time) >= _GAP_THRESHOLD_SECS
+            ):
+                gap_secs = start - last_word_time
+                minutes = int(gap_secs) // 60
+                seconds = int(gap_secs) % 60
+                # Flush current line first
+                if current_line_words:
+                    label = _speaker_label(current_speaker)
+                    lines.append(f"{label}: {''.join(current_line_words).strip()}")
+                    current_line_words = []
+                lines.append(f"[{minutes}:{seconds:02d} silence]")
+
+            # Track last word timestamp
+            if start is not None and wtype == "word":
+                last_word_time = start
 
             # Speaker changed — flush current line
             if effective and effective != current_speaker:
