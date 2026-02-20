@@ -389,16 +389,15 @@ class TestCRMAgentDownload:
         mock_stream.__exit__ = MagicMock(return_value=False)
         return mock_stream
 
-    @patch("agents.agent_01_audio.httpx.stream")
-    def test_download_audio_success(self, mock_httpx_stream, crm_agent):
+    def test_download_audio_success(self, crm_agent):
         """Should download file via streaming and return filepath."""
         call_record = {
             "id": "abc123",
             "startTime": "2026-02-05T14:13:24Z",
             "recording_url": "https://crm.buybusinessclass.com/storage/call_log/test.mp3",
         }
-        mock_httpx_stream.return_value = self._mock_stream_context(
-            content=b"fake audio data"
+        crm_agent._client.stream = MagicMock(
+            return_value=self._mock_stream_context(content=b"fake audio data")
         )
 
         result = crm_agent.download_audio(call_record)
@@ -426,8 +425,7 @@ class TestCRMAgentDownload:
         # No HTTP request should have been made
         crm_agent._client.get.assert_not_called()
 
-    @patch("agents.agent_01_audio.httpx.stream")
-    def test_download_audio_size_limit_exceeded(self, mock_httpx_stream, crm_agent, caplog):
+    def test_download_audio_size_limit_exceeded(self, crm_agent, caplog):
         """Should reject files exceeding MAX_DOWNLOAD_BYTES during streaming."""
         call_record = {
             "id": "big_file",
@@ -443,7 +441,7 @@ class TestCRMAgentDownload:
         mock_stream.iter_bytes = MagicMock(return_value=[chunk] * num_chunks)
         mock_stream.__enter__ = MagicMock(return_value=mock_stream)
         mock_stream.__exit__ = MagicMock(return_value=False)
-        mock_httpx_stream.return_value = mock_stream
+        crm_agent._client.stream = MagicMock(return_value=mock_stream)
 
         import logging
         with caplog.at_level(logging.ERROR, logger="qa_system.agents"):
@@ -483,8 +481,7 @@ class TestCRMAgentDownload:
 
 class TestCRMAgentSearchAndDownload:
 
-    @patch("agents.agent_01_audio.httpx.stream")
-    def test_search_and_download_integration(self, mock_httpx_stream, crm_agent, sample_crm_response):
+    def test_search_and_download_integration(self, crm_agent, sample_crm_response):
         """Should search, download, and set local_audio_path on each record."""
         # Mock search
         mock_search_response = MagicMock()
@@ -493,14 +490,14 @@ class TestCRMAgentSearchAndDownload:
         mock_search_response.content = json.dumps(sample_crm_response).encode()
         crm_agent._client.request.return_value = mock_search_response
 
-        # Mock streaming download
+        # Mock streaming download via client.stream()
         mock_stream = MagicMock()
         mock_stream.status_code = 200
         mock_stream.headers = {"content-type": "audio/mpeg"}
         mock_stream.iter_bytes = MagicMock(return_value=[b"audio bytes"])
         mock_stream.__enter__ = MagicMock(return_value=mock_stream)
         mock_stream.__exit__ = MagicMock(return_value=False)
-        mock_httpx_stream.return_value = mock_stream
+        crm_agent._client.stream = MagicMock(return_value=mock_stream)
 
         results = crm_agent.search_and_download("2026-02-01", "2026-02-10")
 
@@ -584,15 +581,16 @@ class TestCRMAgentStreamingDownload:
         assert result is None
         assert any("html" in msg.lower() for msg in caplog.messages)
 
-    @patch("agents.agent_01_audio.httpx.stream")
-    def test_download_empty_stream(self, mock_httpx_stream, crm_agent, caplog):
+    def test_download_empty_stream(self, crm_agent, caplog):
         """Should reject download when stream returns no bytes."""
         call_record = {
             "id": "empty_call",
             "startTime": "2026-02-05T14:13:24Z",
             "recording_url": "https://crm.buybusinessclass.com/storage/call_log/test.mp3",
         }
-        mock_httpx_stream.return_value = self._mock_stream_context(content=b"")
+        crm_agent._client.stream = MagicMock(
+            return_value=self._mock_stream_context(content=b"")
+        )
 
         import logging
         with caplog.at_level(logging.ERROR, logger="qa_system.agents"):
@@ -600,15 +598,16 @@ class TestCRMAgentStreamingDownload:
 
         assert result is None
 
-    @patch("agents.agent_01_audio.httpx.stream")
-    def test_download_401_returns_none(self, mock_httpx_stream, crm_agent):
+    def test_download_401_returns_none(self, crm_agent):
         """Should return None on 401 auth failure."""
         call_record = {
             "id": "auth_fail",
             "startTime": "2026-02-05T14:13:24Z",
             "recording_url": "https://crm.buybusinessclass.com/storage/call_log/test.mp3",
         }
-        mock_httpx_stream.return_value = self._mock_stream_context(status_code=401)
+        crm_agent._client.stream = MagicMock(
+            return_value=self._mock_stream_context(status_code=401)
+        )
 
         result = crm_agent.download_audio(call_record)
         assert result is None
@@ -794,3 +793,26 @@ class TestCRMAgentSSL:
                 download_folder=str(tmp_path / "audio"),
             )
             assert agent._ssl_verify is True
+
+    def test_download_inherits_ssl_config(self, crm_agent):
+        """NEW-02: Download should use self._client.stream() which inherits
+        SSL verify settings from the shared httpx.Client."""
+        call_record = {
+            "id": "ssl_test",
+            "startTime": "2026-02-05T14:13:24Z",
+            "recording_url": "https://crm.buybusinessclass.com/storage/call_log/test.mp3",
+        }
+        mock_stream = MagicMock()
+        mock_stream.status_code = 200
+        mock_stream.headers = {"content-type": "audio/mpeg"}
+        mock_stream.iter_bytes = MagicMock(return_value=[b"audio data"])
+        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream.__exit__ = MagicMock(return_value=False)
+        crm_agent._client.stream = MagicMock(return_value=mock_stream)
+
+        crm_agent.download_audio(call_record)
+
+        # Verify stream was called via client (not standalone httpx.stream)
+        crm_agent._client.stream.assert_called_once()
+        call_args = crm_agent._client.stream.call_args
+        assert call_args[0][0] == "GET"

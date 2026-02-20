@@ -160,6 +160,21 @@ class InferenceEngine:
                 self._key_locks[key] = threading.Lock()
             return self._key_locks[key]
 
+    def _cleanup_key_locks(self) -> None:
+        """NEW-01: Remove per-key locks that are no longer held.
+
+        Prevents unbounded memory growth when thousands of unique
+        cache keys are evaluated over the lifetime of one engine.
+        """
+        with self._key_locks_guard:
+            to_remove = []
+            for key, lock in self._key_locks.items():
+                if lock.acquire(blocking=False):
+                    lock.release()
+                    to_remove.append(key)
+            for key in to_remove:
+                del self._key_locks[key]
+
     def evaluate(
         self,
         transcript: str,
@@ -231,11 +246,14 @@ class InferenceEngine:
         # HIGH-03: Per-key lock prevents duplicate LLM calls for the same transcript
         key_lock = self._get_key_lock(cache_key)
         with key_lock:
-            return self._evaluate_with_cache(
+            result = self._evaluate_with_cache(
                 cache_key, call_type, criteria, criteria_count,
                 system_prompt, user_prompt, prompt_hash, max_retries,
                 expected_keys,
             )
+        # NEW-01: Clean up released locks to prevent unbounded memory growth
+        self._cleanup_key_locks()
+        return result
 
     def _evaluate_with_cache(
         self,

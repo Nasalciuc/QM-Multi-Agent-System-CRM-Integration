@@ -462,3 +462,9 @@ class TestCleanerCache:
         # Cleaners should still be the same instances (not recreated)
         assert agent._cleaners["inbound"] is cleaner_inbound
         assert agent._cleaners["outbound"] is cleaner_outbound
+
+    def test_reset_providers_delegates_to_factory(self, agent):
+        """NEW-06: reset_providers() should call factory.reset_disabled_providers()."""
+        agent._engine._factory = MagicMock()
+        agent.reset_providers()
+        agent._engine._factory.reset_disabled_providers.assert_called_once()

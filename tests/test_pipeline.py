@@ -77,7 +77,7 @@ def mock_agents(tmp_path):
         "category_scores": {},
         "score_breakdown": {"yes_count": 1, "partial_count": 0, "no_count": 0, "na_count": 0},
     }
-    agent_03.EVALUATION_CRITERIA = {"greeting": {"category": "phone_skills", "weight": 1.0}}
+    agent_03.EVALUATION_CRITERIA = {"greeting": {"category": "opening", "weight": 1.0}}
 
     agent_04.export_all.return_value = {"excel": "test.xlsx", "json": "test.json"}
 
@@ -241,6 +241,35 @@ class TestGracefulShutdown:
         elapsed = time.time() - start
         # Should exit well before 5s
         assert elapsed < 1.0, f"Sleep was not interrupted ({elapsed:.2f}s)"
+
+    def test_signal_handlers_restored_after_run(self, mock_agents):
+        """NEW-03: Signal handlers must be restored after run() completes."""
+        a1, a2, a3, a4 = mock_agents
+        original_handler = signal.getsignal(signal.SIGINT)
+
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+        pipeline.run_local([Path("call1.mp3")])
+
+        restored_handler = signal.getsignal(signal.SIGINT)
+        assert restored_handler is original_handler, (
+            "SIGINT handler was not restored after run_local()"
+        )
+
+    def test_signal_handlers_restored_on_error(self, mock_agents):
+        """NEW-03: Signal handlers must be restored even when run() raises."""
+        a1, a2, a3, a4 = mock_agents
+        a2.transcribe_batch.side_effect = RuntimeError("STT failure")
+
+        original_handler = signal.getsignal(signal.SIGINT)
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+
+        with pytest.raises(RuntimeError, match="STT failure"):
+            pipeline.run_local([Path("call1.mp3")])
+
+        restored_handler = signal.getsignal(signal.SIGINT)
+        assert restored_handler is original_handler, (
+            "SIGINT handler was not restored after error"
+        )
 
 
 # --- Tests: Data Flow Contracts (TEST-25) ---

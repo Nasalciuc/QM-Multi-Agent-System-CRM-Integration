@@ -108,18 +108,29 @@ class Pipeline:
         # HIGH-9: Instance-based graceful shutdown with threading.Event
         self._shutdown = _GracefulShutdown()
 
-        # CRIT-1: Register signal handlers, save old ones so we can restore later
+        # NEW-03: Signal handlers registered/restored per run, not in __init__
+        self._old_sigint = None
+        self._old_sigterm = None
+
+    def _register_signals(self) -> None:
+        """Register SIGINT/SIGTERM handlers for graceful shutdown.
+
+        NEW-03: Called at the start of run()/run_local() instead of __init__
+        so handlers are restored when the pipeline finishes.
+        """
         self._old_sigint = signal.signal(signal.SIGINT, self._shutdown.trigger)
         self._old_sigterm = None
         if hasattr(signal, 'SIGTERM'):
             self._old_sigterm = signal.signal(signal.SIGTERM, self._shutdown.trigger)
 
     def _restore_signals(self) -> None:
-        """Restore original signal handlers saved during __init__."""
+        """NEW-03: Restore original signal handlers after run completes."""
         if self._old_sigint is not None:
             signal.signal(signal.SIGINT, self._old_sigint)
+            self._old_sigint = None
         if self._old_sigterm is not None and hasattr(signal, 'SIGTERM'):
             signal.signal(signal.SIGTERM, self._old_sigterm)
+            self._old_sigterm = None
 
     def _interruptible_sleep(self, seconds: float, granularity: float = 0.25) -> None:
         """MED-NEW-11: Sleep in small increments so shutdown signals
@@ -152,51 +163,60 @@ class Pipeline:
 
         logger.info(f"QA Pipeline: CRM Mode | Period: {date_from} to {date_to or 'now'}")
 
-        pipeline_start = time.time()
-        self._shutdown.reset()  # MED-NEW-15: Clear stale shutdown state
+        # NEW-03: Register signal handlers per-run; restore in finally
+        self._register_signals()
+        try:
+            pipeline_start = time.time()
+            self._shutdown.reset()  # MED-NEW-15: Clear stale shutdown state
 
-        # Step 1: Download recordings
-        logger.info("STEP 1: Downloading recordings from CRM...")
-        calls = self.audio_agent.search_and_download(date_from, date_to)
-        audio_files = [Path(c["local_audio_path"]) for c in calls if c.get("local_audio_path")]
-        logger.info(f"STEP 1 complete: {len(audio_files)} audio files ready")
+            # Step 1: Download recordings
+            logger.info("STEP 1: Downloading recordings from CRM...")
+            calls = self.audio_agent.search_and_download(date_from, date_to)
+            audio_files = [Path(c["local_audio_path"]) for c in calls if c.get("local_audio_path")]
+            logger.info(f"STEP 1 complete: {len(audio_files)} audio files ready")
 
-        if not audio_files:
-            logger.info("No recordings found. Pipeline complete.")
-            return []
+            if not audio_files:
+                logger.info("No recordings found. Pipeline complete.")
+                return []
 
-        # Steps 2-4: Process audio files
-        evaluations = self._process_audio_files(audio_files)
+            # Steps 2-4: Process audio files
+            evaluations = self._process_audio_files(audio_files)
 
-        elapsed = time.time() - pipeline_start
-        logger.info(f"Pipeline complete in {elapsed:.1f}s")
+            elapsed = time.time() - pipeline_start
+            logger.info(f"Pipeline complete in {elapsed:.1f}s")
 
-        return evaluations
+            return evaluations
+        finally:
+            self._restore_signals()
 
     def run_local(self, audio_files: List[Path]) -> List[Dict]:
         """Pipeline from local files (skip CRM download)."""
         logger.info(f"QA Pipeline: Local Mode | Files: {len(audio_files)}")
 
-        pipeline_start = time.time()
-        self._shutdown.reset()  # MED-NEW-15: Clear stale shutdown state
+        # NEW-03: Register signal handlers per-run; restore in finally
+        self._register_signals()
+        try:
+            pipeline_start = time.time()
+            self._shutdown.reset()  # MED-NEW-15: Clear stale shutdown state
 
-        if not audio_files:
-            logger.info("No audio files provided. Pipeline complete.")
-            return []
+            if not audio_files:
+                logger.info("No audio files provided. Pipeline complete.")
+                return []
 
-        evaluations = self._process_audio_files(audio_files)
+            evaluations = self._process_audio_files(audio_files)
 
-        elapsed = time.time() - pipeline_start
-        logger.info(f"Pipeline complete in {elapsed:.1f}s")
+            elapsed = time.time() - pipeline_start
+            logger.info(f"Pipeline complete in {elapsed:.1f}s")
 
-        return evaluations
+            return evaluations
+        finally:
+            self._restore_signals()
 
     def _process_audio_files(self, audio_files: List[Path]) -> List[Dict]:
         """Steps 2-4: Transcribe, evaluate, export."""
 
-        # Fix #5: Re-enable providers disabled in previous run
-        if hasattr(self.qa_agent, '_engine') and hasattr(self.qa_agent._engine, '_factory'):
-            self.qa_agent._engine._factory.reset_disabled_providers()
+        # NEW-06: Re-enable providers disabled in previous run (public API)
+        self.qa_agent.reset_providers()
 
         # #7: Check disk space before processing
         self._check_disk_space()

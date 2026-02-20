@@ -10,6 +10,7 @@ the system now falls through to Claude Sonnet, then direct OpenAI.
 
 import os
 import logging
+import threading
 from typing import List, Optional
 
 import yaml
@@ -93,6 +94,7 @@ class ModelFactory:
         temperature: float = 0.1,
         max_tokens: int = 4096,
         json_mode: bool = False,
+        shutdown_event: Optional[threading.Event] = None,
     ) -> LLMResponse:
         """Try primary provider first, then each fallback in order.
 
@@ -154,8 +156,13 @@ class ModelFactory:
                     f"Provider {provider.provider_name} rate limited. "
                     f"Retrying in {delay}s..."
                 )
-                import time
-                time.sleep(delay)
+                # NEW-07: Shutdown-aware sleep — exit early if shutdown signalled
+                if shutdown_event is not None:
+                    if shutdown_event.wait(delay):
+                        raise RuntimeError("Shutdown requested during rate-limit delay")
+                else:
+                    import time
+                    time.sleep(delay)
                 try:
                     response = provider.chat(
                         system_prompt=system_prompt,

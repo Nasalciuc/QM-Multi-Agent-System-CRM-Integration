@@ -359,16 +359,14 @@ class CRMAgent:
             logger.debug(f"Downloading {filename} from {recording_url[:80]}...")
 
             # CRIT-1: Streaming download — prevents OOM on large files.
-            # Recording URLs are pre-signed — do NOT send Authorization header.
-            # Use httpx.stream() directly (not self._client which has auth headers).
+            # NEW-02: Use self._client.stream() to inherit SSL verify,
+            # auth headers, and timeout configuration from the shared client.
             tmp_fd = None
             tmp_path = None
             try:
-                with httpx.stream(
+                with self._client.stream(
                     "GET",
                     recording_url,
-                    timeout=60,
-                    verify=self._ssl_verify,
                     follow_redirects=True,
                 ) as stream:
                     if stream.status_code == 401:

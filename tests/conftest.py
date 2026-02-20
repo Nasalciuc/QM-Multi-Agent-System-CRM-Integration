@@ -132,10 +132,10 @@ def full_evaluation_list():
             "score_data": {
                 "overall_score": 75.0,
                 "category_scores": {
-                    "phone_skills": {"score": 80.0, "count": 5},
-                    "sales_techniques": {"score": 70.0, "count": 8},
-                    "urgency_closing": {"score": 60.0, "count": 3},
-                    "soft_skills": {"score": 85.0, "count": 8},
+                    "opening": {"score": 80.0, "count": 5},
+                    "interview": {"score": 70.0, "count": 8},
+                    "psychological_framing": {"score": 60.0, "count": 3},
+                    "communication": {"score": 85.0, "count": 8},
                 },
                 "score_breakdown": {
                     "yes_count": 10, "partial_count": 8,
@@ -162,6 +162,6 @@ def full_evaluation_list():
 def criteria_ref():
     """Minimal criteria reference dict for export tests."""
     return {
-        "greeting_prepared": {"category": "phone_skills", "weight": 1.0},
-        "contact_info": {"category": "phone_skills", "weight": 1.0},
+        "greeting_prepared": {"category": "opening", "weight": 1.0},
+        "contact_info": {"category": "opening", "weight": 1.0},
     }

@@ -58,13 +58,13 @@ def integration_agents(tmp_path):
         "overall_score": 50.0,
         "total_points": 1.5,
         "total_weight": 3.0,
-        "category_scores": {"phone_skills": {"score": 75.0, "count": 2}},
+        "category_scores": {"opening": {"score": 75.0, "count": 2}},
         "score_breakdown": {"yes_count": 1, "partial_count": 1, "no_count": 1, "na_count": 0},
     }
     agent_03.EVALUATION_CRITERIA = {
-        "greeting_prepared": {"category": "phone_skills", "weight": 1.0},
-        "contact_info": {"category": "phone_skills", "weight": 1.0},
-        "needs_assessment": {"category": "sales_techniques", "weight": 1.0},
+        "greeting_prepared": {"category": "opening", "weight": 1.0},
+        "contact_info": {"category": "opening", "weight": 1.0},
+        "needs_assessment": {"category": "interview", "weight": 1.0},
     }
 
     # Agent 04: Export returns file paths

@@ -97,6 +97,15 @@ class QualityManagementAgent:
             f"Provider: {model_factory.primary.provider_name}"
         )
 
+    def reset_providers(self) -> None:
+        """NEW-06: Public method to re-enable providers disabled in a previous run.
+
+        Delegates to the internal inference engine's factory so pipeline.py
+        does not need to reach across multiple private attributes.
+        """
+        if hasattr(self._engine, '_factory'):
+            self._engine._factory.reset_disabled_providers()
+
     def detect_call_type(
         self,
         filename: str,

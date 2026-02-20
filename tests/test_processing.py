@@ -292,14 +292,12 @@ class TestPIIRedactor:
         assert "15-01-1990" not in result["text"]
 
     def test_redact_passport(self):
-        """#31: Passport numbers should be redacted (by intl or domestic pattern)."""
+        """#31: Passport numbers should be redacted (unified pattern — NEW-11)."""
         redactor = PIIRedactor()
         result = redactor.redact("My passport is A12345678.")
-        # May be caught by intl_passport (1-2 letter prefix) or domestic passport
-        assert "[PASSPORT]" in result["text"] or "[PASSPORT]" in result["text"]
+        assert "[PASSPORT]" in result["text"]
         assert "A12345678" not in result["text"]
-        total_passport = result["pii_found"]["passport"] + result["pii_found"]["intl_passport"]
-        assert total_passport >= 1
+        assert result["pii_found"]["passport"] >= 1
 
     def test_redact_address(self):
         """#31: Street addresses should be redacted."""
@@ -329,6 +327,28 @@ class TestPIIRedactor:
         redactor = PIIRedactor()
         result = redactor.redact("LONDON is a great city.")
         assert "LONDON" in result["text"]  # NOT redacted
+
+    def test_order_number_not_redacted(self):
+        """NEW-05: 10-digit order numbers should NOT be redacted as phone."""
+        redactor = PIIRedactor()
+        result = redactor.redact("Your order number 1234567890 has shipped")
+        assert "1234567890" in result["text"]
+        assert result["pii_found"]["phone"] == 0
+
+    def test_account_id_not_redacted(self):
+        """NEW-05: 10-digit account IDs should NOT be redacted as phone."""
+        redactor = PIIRedactor()
+        result = redactor.redact("Account 1234567890 is active")
+        assert "1234567890" in result["text"]
+        assert result["pii_found"]["phone"] == 0
+
+    def test_actual_phone_still_redacted(self):
+        """NEW-05: Real 10-digit phones (no context word) still redacted."""
+        redactor = PIIRedactor()
+        result = redactor.redact("Call me at 5551234567 please")
+        assert "[PHONE]" in result["text"]
+        assert "5551234567" not in result["text"]
+        assert result["pii_found"]["phone"] >= 1
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -399,11 +419,19 @@ class TestPIIInternationalPatterns:
         assert result["pii_found"]["intl_phone"] >= 1
 
     def test_passport_two_letter_prefix_redacted(self):
+        """NEW-11: Unified passport pattern handles 1-2 letter prefixes."""
         redactor = PIIRedactor()
         result = redactor.redact("My passport is AB1234567")
         assert "[PASSPORT]" in result["text"]
         assert "AB1234567" not in result["text"]
-        assert result["pii_found"]["intl_passport"] >= 1
+        assert result["pii_found"]["passport"] >= 1
+
+    def test_passport_no_double_count(self):
+        """NEW-11: Single passport should not be counted twice after pattern merge."""
+        redactor = PIIRedactor()
+        result = redactor.redact("Passport: A1234567")
+        assert result["text"].count("[PASSPORT]") == 1
+        assert result["pii_found"]["passport"] == 1
 
     def test_loyalty_number_redacted(self):
         redactor = PIIRedactor()

@@ -302,6 +302,20 @@ class TestTypedExceptionHandling:
             assert factory.providers[0].chat.call_count == 2
             assert result.provider == "test-primary"
 
+    def test_rate_limit_aborts_on_shutdown(self, models_config):
+        """NEW-07: shutdown_event set during rate-limit delay should raise RuntimeError."""
+        import threading
+        with patch.dict(os.environ, {"TEST_PRIMARY_KEY": "k1", "TEST_FALLBACK_KEY": "k2"}):
+            factory = ModelFactory(config_path=models_config)
+            factory.providers[0].chat = MagicMock(
+                side_effect=LLMRateLimitError("wait", retry_after=5.0)
+            )
+            shutdown = threading.Event()
+            shutdown.set()  # Already triggered — should abort immediately
+
+            with pytest.raises(RuntimeError, match="Shutdown requested"):
+                factory.chat_with_fallback("sys", "usr", shutdown_event=shutdown)
+
     def test_server_error_falls_through(self, models_config):
         """LLMServerError should fall through to fallback."""
         with patch.dict(os.environ, {"TEST_PRIMARY_KEY": "k1", "TEST_FALLBACK_KEY": "k2"}):

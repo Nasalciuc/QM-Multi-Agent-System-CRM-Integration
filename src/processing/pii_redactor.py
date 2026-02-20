@@ -40,8 +40,13 @@ _PHONE_PATTERN = re.compile(
 )
 
 # CRIT-5: Unseparated 10-digit phone numbers (e.g., 5551234567)
+# NEW-05: Negative lookbehinds reject order/account/confirmation/booking/reference/id
+#         contexts to reduce false positives on numeric identifiers.
 _PHONE_NOSEP_PATTERN = re.compile(
-    r"(?<!\d)\d{10}(?!\d)"
+    r"(?<!order )(?<!account )(?<!confirmation )(?<!booking )"
+    r"(?<!reference )(?<!number )(?<!id )(?<!#)"
+    r"(?<!\d)\d{10}(?!\d)",
+    re.IGNORECASE,
 )
 
 # Email: user@domain.tld
@@ -87,9 +92,10 @@ _DOB_PATTERN = re.compile(
     r"|\b(?:0[1-9]|[12]\d|3[01])[/\-](?:0[1-9]|1[0-2])[/\-](?:19|20)\d{2}\b"
 )
 
-# #4: Passport number (letter followed by 6-9 digits)
+# #4: Passport number — NEW-11: Merged with _INTL_PASSPORT_PATTERN
+# Covers 1-2 letter prefix + 6-9 digits (handles both domestic & international)
 _PASSPORT_PATTERN = re.compile(
-    r"\b[A-Z]\d{6,9}\b"
+    r'\b[A-Z]{1,2}\d{6,9}\b'
 )
 
 # #4: Street address (number + street name + suffix)
@@ -111,11 +117,6 @@ _INTL_PHONE_PATTERN = re.compile(
     r'\+\d{1,3}[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{2,4}[\s.-]?\d{2,4}[\s.-]?\d{0,4}'
 )
 
-# HIGH-07: Passport numbers with 1-2 letter prefix + 6-8 digits
-_INTL_PASSPORT_PATTERN = re.compile(
-    r'\b[A-Z]{1,2}\d{6,8}\b'
-)
-
 # HIGH-07: Frequent flyer / loyalty program: 2-3 letters + 8-12 digits
 _LOYALTY_PATTERN = re.compile(
     r'\b[A-Z]{2,3}[-]?\d{8,12}\b'
@@ -133,7 +134,6 @@ _REPLACEMENTS = {
     "address": "[ADDRESS]",
     "pnr": "[BOOKING_REF]",
     "intl_phone": "[PHONE]",
-    "intl_passport": "[PASSPORT]",
     "loyalty": "[LOYALTY_ID]",
 }
 
@@ -160,7 +160,6 @@ class PIIRedactor:
         redact_address: bool = True,
         redact_pnr: bool = True,
         redact_intl_phone: bool = True,
-        redact_intl_passport: bool = True,
         redact_loyalty: bool = True,
     ):
         self.redact_phones = redact_phones
@@ -173,7 +172,6 @@ class PIIRedactor:
         self.redact_address = redact_address
         self.redact_pnr = redact_pnr
         self.redact_intl_phone = redact_intl_phone
-        self.redact_intl_passport = redact_intl_passport
         self.redact_loyalty = redact_loyalty
 
     def redact(self, text: str) -> Dict:
@@ -193,7 +191,7 @@ class PIIRedactor:
 
         counts = {"phone": 0, "email": 0, "credit_card": 0, "ssn": 0,
                   "spelled_pii": 0, "dob": 0, "passport": 0, "address": 0, "pnr": 0,
-                  "intl_phone": 0, "intl_passport": 0, "loyalty": 0}
+                  "intl_phone": 0, "loyalty": 0}
 
         # Order matters: SSN before phone (SSN is more specific)
         if self.redact_ssn:
@@ -225,12 +223,7 @@ class PIIRedactor:
             text, n2 = _PHONE_NOSEP_PATTERN.subn(_REPLACEMENTS["phone"], text)
             counts["phone"] += n2
 
-        # HIGH-07: International passport (1-2 letter prefix)
-        if self.redact_intl_passport:
-            text, n = _INTL_PASSPORT_PATTERN.subn(_REPLACEMENTS["intl_passport"], text)
-            counts["intl_passport"] = n
-
-        # #4: Passport numbers
+        # #4: Passport numbers — NEW-11: unified pattern handles both domestic & intl
         if self.redact_passport:
             text, n = _PASSPORT_PATTERN.subn(_REPLACEMENTS["passport"], text)
             counts["passport"] = n

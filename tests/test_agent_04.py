@@ -51,10 +51,10 @@ def sample_evaluations():
             "score_data": {
                 "overall_score": 75.0,
                 "category_scores": {
-                    "phone_skills": {"score": 80.0, "count": 5},
-                    "sales_techniques": {"score": 70.0, "count": 8},
-                    "urgency_closing": {"score": 60.0, "count": 3},
-                    "soft_skills": {"score": 85.0, "count": 8},
+                    "opening": {"score": 80.0, "count": 5},
+                    "interview": {"score": 70.0, "count": 8},
+                    "psychological_framing": {"score": 60.0, "count": 3},
+                    "communication": {"score": 85.0, "count": 8},
                 },
                 "score_breakdown": {"yes_count": 10, "partial_count": 8, "no_count": 4, "na_count": 2},
             },
@@ -77,8 +77,8 @@ def sample_evaluations():
 @pytest.fixture
 def criteria_ref():
     return {
-        "greeting_prepared": {"category": "phone_skills", "weight": 1.0},
-        "contact_info": {"category": "phone_skills", "weight": 1.0},
+        "greeting_prepared": {"category": "opening", "weight": 1.0},
+        "contact_info": {"category": "opening", "weight": 1.0},
     }
 
 
@@ -135,7 +135,7 @@ class TestExportAll:
         files = agent.export_all(sample_evaluations, criteria_ref)
         df = pd.read_csv(files["csv_summary"])
         # Dynamic category columns from criteria_ref + standard columns
-        expected_cols = {"File", "Type", "Score", "phone_skills", "YES", "PARTIAL", "NO", "Cost"}
+        expected_cols = {"File", "Type", "Score", "opening", "YES", "PARTIAL", "NO", "Cost"}
         assert set(df.columns) == expected_cols
 
 

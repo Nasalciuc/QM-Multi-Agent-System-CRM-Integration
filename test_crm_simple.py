@@ -3,11 +3,7 @@ Simple CRM API test - just try to connect and see what we get
 """
 import httpx
 import os
-import urllib3
 from dotenv import load_dotenv
-
-# Suppress SSL warnings
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 load_dotenv()
 
@@ -15,6 +11,9 @@ TOKEN = os.environ.get("CRM_AI_TOKEN")
 if not TOKEN:
     print("ERROR: CRM_AI_TOKEN not found")
     exit(1)
+
+# NEW-10: Honour CRM_CA_BUNDLE env var instead of verify=False
+_SSL_VERIFY = os.environ.get("CRM_CA_BUNDLE", True)
 
 print(f"Token loaded: {TOKEN[:20]}...")
 print()
@@ -36,7 +35,7 @@ try:
         params={"agent_id": 248, "limit": 10},
         headers=headers,
         timeout=15,
-        verify=False,  # Disable SSL verification
+        verify=_SSL_VERIFY,
     )
     
     print(f"Status: {r.status_code}")

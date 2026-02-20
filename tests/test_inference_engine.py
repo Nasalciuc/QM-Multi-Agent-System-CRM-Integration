@@ -232,7 +232,7 @@ class TestEvaluateFlow:
         result = engine.evaluate(
             transcript="Agent: Hello\nClient: Hi there how are you",
             call_type="First Call",
-            criteria={"test_crit": {"category": "phone_skills", "weight": 1.0, "description": "Test"}},
+            criteria={"test_crit": {"category": "opening", "weight": 1.0, "description": "Test"}},
         )
 
         assert result["call_type"] == "First Call"
@@ -400,3 +400,38 @@ class TestPerKeyLocking:
         lock_1 = engine._get_key_lock("same_key")
         lock_2 = engine._get_key_lock("same_key")
         assert lock_1 is lock_2
+
+    def test_key_locks_cleaned_after_evaluation(self, mock_factory, tmp_path):
+        """NEW-01: Per-key locks should be cleaned up after evaluation
+        to prevent unbounded memory growth over thousands of evaluations."""
+        engine = InferenceEngine(
+            model_factory=mock_factory,
+            cache_dir=str(tmp_path / "cache"),
+            enable_cache=False,  # disable cache so each call goes to LLM
+        )
+
+        mock_response = LLMResponse(
+            text=json.dumps({
+                "criteria": {"c1": {"score": "YES", "evidence": "ok"}},
+                "overall_assessment": "Good",
+                "strengths": [],
+                "improvements": [],
+            }),
+            input_tokens=100, output_tokens=50,
+            cost_usd=0.001, model="test", provider="test",
+            elapsed_seconds=0.1,
+        )
+        mock_factory.chat_with_fallback.return_value = mock_response
+
+        # Run 5 evaluations with different transcripts
+        for i in range(5):
+            engine.evaluate(
+                f"Unique transcript number {i} with enough words for evaluation purposes",
+                "First Call",
+                {"c1": {"category": "test", "weight": 1.0, "description": "d"}},
+            )
+
+        # After evaluations, key locks should have been cleaned up
+        assert len(engine._key_locks) == 0, (
+            f"Expected 0 key locks after cleanup, got {len(engine._key_locks)}"
+        )

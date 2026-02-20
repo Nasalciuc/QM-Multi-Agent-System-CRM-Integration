@@ -92,7 +92,7 @@ Each criterion requires:
 ```yaml
 criterion_key:
   description: "What the agent should do"
-  category: "phone_skills"    # phone_skills | sales_techniques | urgency_closing | soft_skills
+  category: "opening"          # opening | interview | psychological_framing | first_call_closing | second_call_opening | strategic_presentation | creating_certainty | second_call_objection_handling | commitment_closing | communication
   weight: 1.0                 # Score weight (default 1.0)
   call_applicability: both    # "first_only" | "second_only" | "both"
 ```
