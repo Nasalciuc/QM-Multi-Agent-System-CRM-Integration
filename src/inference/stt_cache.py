@@ -75,7 +75,7 @@ class STTCache:
         return self._enabled
 
     @property
-    def stats(self) -> Dict[str, int]:
+    def stats(self) -> Dict[str, int | float]:
         """Return cache hit/miss/save statistics."""
         return {
             "hits": self._hits,
