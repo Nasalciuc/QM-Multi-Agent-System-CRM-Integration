@@ -6,13 +6,9 @@ import httpx
 import json
 import sys
 import os
-import urllib3
 from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
-
-# Suppress SSL warnings
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 load_dotenv()
 
@@ -20,6 +16,9 @@ BASE_URL = "https://crm.buybusinessclass.com/ai"
 TOKEN = os.environ.get("CRM_AI_TOKEN")
 AGENT_ID = 248
 LIMIT = 200
+
+# SSL verification: use CRM_CA_BUNDLE env var if set, else system trust store
+_SSL_VERIFY = os.environ.get("CRM_CA_BUNDLE", True)
 
 if not TOKEN:
     print("ERROR: CRM_AI_TOKEN not found in environment variables!")
@@ -44,7 +43,7 @@ try:
         params={"agent_id": AGENT_ID, "limit": LIMIT},
         headers=headers,
         timeout=15,
-        verify=False,
+        verify=_SSL_VERIFY,
     )
     print(f"  Status: {r.status_code}")
 
@@ -119,7 +118,7 @@ if items and items[0].get("calls"):
     if rec_url:
         try:
             print(f"  Attempting to download recording...")
-            r2 = httpx.get(rec_url, headers=headers, timeout=30, verify=False)
+            r2 = httpx.get(rec_url, headers=headers, timeout=30, verify=_SSL_VERIFY)
             print(f"  Recording URL: {rec_url[:80]}...")
             print(f"  Status: {r2.status_code}")
             content_type = r2.headers.get("content-type", "unknown")
@@ -158,7 +157,7 @@ try:
         },
         headers=headers,
         timeout=15,
-        verify=False,
+        verify=_SSL_VERIFY,
     )
     d3 = r3.json()
     total_calls = sum(len(item.get("calls", [])) for item in d3.get("items", []))

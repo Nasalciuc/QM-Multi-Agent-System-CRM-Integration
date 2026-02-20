@@ -758,7 +758,7 @@ class TestCRMAgentPagination:
 class TestCRMAgentSSL:
 
     def test_ssl_disabled_by_default(self, tmp_path):
-        """Without CRM_CA_BUNDLE, SSL verification should be False."""
+        """Without CRM_CA_BUNDLE, SSL verification defaults to True (HIGH-01)."""
         with patch("agents.agent_01_audio.httpx.Client") as mock_client_class, \
              patch.dict(os.environ, {}, clear=False):
             # Ensure CRM_CA_BUNDLE is not set
@@ -769,7 +769,7 @@ class TestCRMAgentSSL:
                 api_token="test-token",
                 download_folder=str(tmp_path / "audio"),
             )
-            assert agent._ssl_verify is False
+            assert agent._ssl_verify is True
 
     def test_ssl_uses_ca_bundle(self, tmp_path):
         """With CRM_CA_BUNDLE set, should use that path for SSL verification."""
@@ -784,7 +784,7 @@ class TestCRMAgentSSL:
             assert agent._ssl_verify == "/path/to/ca.crt"
 
     def test_ssl_empty_ca_bundle_disables(self, tmp_path):
-        """Empty CRM_CA_BUNDLE should disable SSL verification."""
+        """Empty CRM_CA_BUNDLE should default to True (HIGH-01)."""
         with patch("agents.agent_01_audio.httpx.Client") as mock_client_class, \
              patch.dict(os.environ, {"CRM_CA_BUNDLE": "  "}):
             mock_client = MagicMock()
@@ -793,4 +793,4 @@ class TestCRMAgentSSL:
                 api_token="test-token",
                 download_folder=str(tmp_path / "audio"),
             )
-            assert agent._ssl_verify is False
+            assert agent._ssl_verify is True

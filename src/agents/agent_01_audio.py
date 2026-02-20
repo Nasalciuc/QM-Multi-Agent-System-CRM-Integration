@@ -17,10 +17,9 @@ import time
 import logging
 
 import httpx
-import urllib3
 
-# Suppress SSL verification warnings for self-signed certificates
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# Note: urllib3 warning suppression removed (HIGH-01).
+# Use CRM_CA_BUNDLE env var for self-signed certificates.
 
 logger = logging.getLogger("qa_system.agents")
 
@@ -111,17 +110,17 @@ class CRMAgent:
         self.agent_id = agent_id
         self.download_folder.mkdir(parents=True, exist_ok=True)
 
-        # SSL verification: use CRM_CA_BUNDLE env var if set, else disable
-        # verification for self-signed certificates
+        # SSL verification: use CRM_CA_BUNDLE env var if set, else system trust store.
+        # HIGH-01: Default to True (enabled) instead of False.
         ca_bundle = os.environ.get("CRM_CA_BUNDLE", "").strip()
         if ca_bundle:
             self._ssl_verify = ca_bundle
             logger.info(f"CRMAgent SSL: using custom CA bundle from CRM_CA_BUNDLE")
         else:
-            self._ssl_verify = False
-            logger.warning(
-                "CRMAgent SSL verification disabled (no CRM_CA_BUNDLE env var). "
-                "Set CRM_CA_BUNDLE to a CA bundle path for production use."
+            self._ssl_verify = True
+            logger.info(
+                "CRMAgent SSL: using system trust store. "
+                "Set CRM_CA_BUNDLE env var for custom CA bundle."
             )
 
         self._client = httpx.Client(
