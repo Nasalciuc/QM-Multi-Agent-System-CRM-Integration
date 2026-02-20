@@ -531,6 +531,7 @@ class TestPreprocessAudio:
         )
         preprocessed, stats = agent._preprocess_audio(audio_path)
         assert preprocessed is None
+        assert stats is not None
         assert stats["action"] == "no_change"
 
     def test_preprocess_all_silence(self, mock_client, tmp_path):
@@ -549,6 +550,7 @@ class TestPreprocessAudio:
         )
         preprocessed, stats = agent._preprocess_audio(audio_path)
         assert preprocessed is None
+        assert stats is not None
         assert stats["action"] == "all_silence"
         assert stats["savings_pct"] == 100.0
 
@@ -572,6 +574,7 @@ class TestPreprocessAudio:
         )
         preprocessed, stats = agent._preprocess_audio(audio_path)
         assert preprocessed is not None
+        assert stats is not None
         assert stats["savings_pct"] > 10
         # Processed should be roughly 2s + 1s + 2s = 5s (± padding)
         assert stats["processed_duration_ms"] < 7000
