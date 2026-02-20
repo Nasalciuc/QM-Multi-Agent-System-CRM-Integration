@@ -28,6 +28,9 @@ from utils import json_serializer as _json_serializer  # HIGH-6: shared serializ
 
 logger = logging.getLogger("qa_system.inference")
 
+# Per-key lock type alias
+_KeyLocks = Dict[str, threading.Lock]
+
 # Lazy-loaded PII redactor for sanitising error responses (CRIT-NEW-1)
 _pii_redactor_instance = None
 
@@ -71,6 +74,10 @@ class InferenceEngine:
         self._enable_cache = enable_cache and self._cache_dir is not None
         self._cache_ttl = cache_ttl_seconds
         self._cache_lock = threading.Lock()  # CRIT-4: Thread-safe cache access
+
+        # HIGH-03: Per-key locks to prevent duplicate LLM calls for identical transcripts
+        self._key_locks: _KeyLocks = {}
+        self._key_locks_guard = threading.Lock()  # Protects the dict itself
 
         # L1: In-memory LRU cache (OrderedDict, moves to end on access)
         self._memory_cache: OrderedDict[str, Dict] = OrderedDict()
@@ -146,6 +153,13 @@ class InferenceEngine:
             while len(self._memory_cache) > self._memory_cache_maxsize:
                 self._memory_cache.popitem(last=False)  # Evict oldest
 
+    def _get_key_lock(self, key: str) -> threading.Lock:
+        """HIGH-03: Get or create a per-key lock to prevent duplicate computation."""
+        with self._key_locks_guard:
+            if key not in self._key_locks:
+                self._key_locks[key] = threading.Lock()
+            return self._key_locks[key]
+
     def evaluate(
         self,
         transcript: str,
@@ -213,6 +227,29 @@ class InferenceEngine:
             criteria_hash=criteria_hash,
             prompt_hash=prompt_hash,
         )
+
+        # HIGH-03: Per-key lock prevents duplicate LLM calls for the same transcript
+        key_lock = self._get_key_lock(cache_key)
+        with key_lock:
+            return self._evaluate_with_cache(
+                cache_key, call_type, criteria, criteria_count,
+                system_prompt, user_prompt, prompt_hash, max_retries,
+                expected_keys,
+            )
+
+    def _evaluate_with_cache(
+        self,
+        cache_key: str,
+        call_type: str,
+        criteria: Dict[str, Dict],
+        criteria_count: int,
+        system_prompt: str,
+        user_prompt: str,
+        prompt_hash: str,
+        max_retries: int,
+        expected_keys: set,
+    ) -> Dict:
+        """Inner evaluation with cache check and LLM call (HIGH-03: runs under per-key lock)."""
         if self._enable_cache:
             # L1: Check in-memory LRU cache first (thread-safe read)
             with self._cache_lock:

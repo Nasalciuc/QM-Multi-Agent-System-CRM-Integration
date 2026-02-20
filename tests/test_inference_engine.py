@@ -333,3 +333,70 @@ class TestCacheWriteFailureCounter:
 
         assert engine._cache_write_failures == 1
         assert engine.cache_stats["cache_write_failures"] == 1
+
+
+# --- Tests: HIGH-03 — Per-key locking prevents duplicate LLM calls ---
+
+class TestPerKeyLocking:
+
+    def test_concurrent_same_transcript_single_llm_call(self, mock_factory, tmp_path):
+        """HIGH-03: Concurrent evaluate() calls with the same transcript
+        should result in exactly one LLM call (others hit cache)."""
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        engine = InferenceEngine(
+            model_factory=mock_factory,
+            cache_dir=str(tmp_path / "cache"),
+            enable_cache=True,
+        )
+
+        call_count = 0
+        call_lock = threading.Lock()
+
+        def mock_chat(**kwargs):
+            nonlocal call_count
+            with call_lock:
+                call_count += 1
+            import time
+            time.sleep(0.1)  # Simulate LLM latency
+            return LLMResponse(
+                text='{"criteria": {"c1": {"score": "YES", "evidence": "ok"}}, "overall_assessment": "Good", "strengths": [], "improvements": []}',
+                input_tokens=100, output_tokens=50,
+                cost_usd=0.001, model="test", provider="test",
+                elapsed_seconds=0.1,
+            )
+
+        mock_factory.chat_with_fallback = MagicMock(side_effect=mock_chat)
+
+        transcript = "This is a test transcript with enough words for evaluation"
+        criteria = {"c1": {"category": "test", "weight": 1.0, "description": "Test criterion"}}
+
+        results = []
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = [
+                pool.submit(engine.evaluate, transcript, "First Call", criteria)
+                for _ in range(3)
+            ]
+            for f in futures:
+                results.append(f.result())
+
+        # All 3 should succeed
+        assert len(results) == 3
+        for r in results:
+            assert "criteria" in r
+
+        # But the LLM should have been called only once
+        assert call_count == 1, f"Expected 1 LLM call, got {call_count}"
+
+    def test_different_transcripts_get_separate_locks(self, engine):
+        """HIGH-03: Different cache keys should get independent locks."""
+        lock_a = engine._get_key_lock("key_a")
+        lock_b = engine._get_key_lock("key_b")
+        assert lock_a is not lock_b
+
+    def test_same_key_returns_same_lock(self, engine):
+        """HIGH-03: Same cache key should return the same lock instance."""
+        lock_1 = engine._get_key_lock("same_key")
+        lock_2 = engine._get_key_lock("same_key")
+        assert lock_1 is lock_2
