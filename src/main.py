@@ -8,7 +8,9 @@ Usage:
 """
 
 import argparse
+import json as _json
 import os
+import platform
 import sys
 from datetime import datetime as _dt
 from pathlib import Path
@@ -28,6 +30,67 @@ _CRM_ENV_KEYS = ['CRM_AI_TOKEN']
 
 # Cost constants (match agent_02_transcription.py)
 _STT_COST_PER_MINUTE = 0.005
+
+# MED-02: Lock file stale threshold (24 hours)
+_LOCK_STALE_SECONDS = 24 * 60 * 60
+
+
+def _write_lock_file(path: Path) -> None:
+    """Write a JSON lock file with pid, hostname, and timestamp."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "pid": os.getpid(),
+        "hostname": platform.node(),
+        "started_at": _dt.utcnow().isoformat(),
+    }
+    path.write_text(_json.dumps(payload))
+
+
+def _check_lock_file(path: Path, logger) -> bool:
+    """Check if a lock file represents a live process.
+
+    Returns True if a running process holds the lock (should abort).
+    Removes stale lock files and returns False otherwise.
+    """
+    try:
+        data = _json.loads(path.read_text())
+        stored_pid = int(data["pid"])
+        started_at_str = data.get("started_at")
+    except (ValueError, KeyError, _json.JSONDecodeError, OSError):
+        logger.warning("Could not parse lock file. Removing stale lock.")
+        path.unlink(missing_ok=True)
+        return False
+
+    # MED-02: 24-hour stale safety valve
+    if started_at_str:
+        try:
+            started_at = _dt.fromisoformat(started_at_str)
+            age_seconds = (_dt.utcnow() - started_at).total_seconds()
+            if age_seconds > _LOCK_STALE_SECONDS:
+                logger.warning(
+                    f"Lock file age ({age_seconds:.0f}s) exceeds 24h safety valve. "
+                    f"Removing stale lock (PID {stored_pid}, host {data.get('hostname', '?')})."
+                )
+                path.unlink(missing_ok=True)
+                return False
+        except (ValueError, TypeError):
+            pass  # can't parse date — fall through to PID check
+
+    # PID liveness check
+    try:
+        os.kill(stored_pid, 0)
+        # Process exists — lock is valid
+        logger.error(
+            f"Pipeline lock file exists (PID {stored_pid}, host {data.get('hostname', '?')}). "
+            "Use --force to override."
+        )
+        return True
+    except (OSError, ProcessLookupError):
+        logger.warning(
+            f"Stale lock file found (PID {stored_pid} not running). Removing."
+        )
+        path.unlink(missing_ok=True)
+        return False
 # Rough LLM cost estimate per evaluation (~1500 input + ~800 output tokens)
 _LLM_COST_PER_EVAL_ESTIMATE = 0.003
 
@@ -82,6 +145,7 @@ def _run_dry_run(args, config, logger):
     total_duration = 0.0
     cached_count = 0
     uncached_count = 0
+    uncached_duration = 0.0  # HIGH-05: Track uncached duration in single pass
 
     print(f"  {'File':<40} {'Duration':>8} {'Cached':>8} {'STT Cost':>10}")
     print(f"  {'-'*40} {'-'*8} {'-'*8} {'-'*10}")
@@ -105,25 +169,13 @@ def _run_dry_run(args, config, logger):
             stt_cost = 0.0
         else:
             uncached_count += 1
+            uncached_duration += duration  # HIGH-05: Accumulate in single pass
             stt_cost = duration * _STT_COST_PER_MINUTE
 
         print(f"  {audio_path.name:<40} {dur_str:>8} {'YES' if is_cached else 'NO':>8} "
               f"${stt_cost:>9.4f}")
 
-    # Totals
-    uncached_duration = sum(
-        (_estimate_audio_duration(f) or 0) for f in audio_files
-    ) - sum(
-        (_estimate_audio_duration(f) or 0) for f in audio_files
-        if stt_cache.load(STTCache.cache_key(
-            f,
-            model_id=el_config.get("model", "scribe_v2"),
-            diarize=el_config.get("diarize", True),
-            num_speakers=el_config.get("num_speakers"),
-            language_code=el_config.get("language_code"),
-        )) is not None
-    )
-
+    # HIGH-05: Use single-pass uncached_duration (no double-counting)
     stt_total = uncached_duration * _STT_COST_PER_MINUTE
     llm_total = len(audio_files) * _LLM_COST_PER_EVAL_ESTIMATE
     grand_total = stt_total + llm_total
@@ -206,6 +258,30 @@ def main():
                 logger.info("CRM API connectivity: OK")
             except Exception as e:
                 logger.warning(f"CRM API connectivity check failed: {e}")
+
+        # HIGH-06: ElevenLabs API connectivity check
+        el_key = os.environ.get('ELEVENLABS_API_KEY')
+        if el_key:
+            try:
+                from elevenlabs import ElevenLabs
+                el_test = ElevenLabs(api_key=el_key)
+                el_test.models.list()
+                logger.info("ElevenLabs API connectivity: OK")
+            except Exception as e:
+                logger.warning(f"ElevenLabs API check failed: {e}")
+        else:
+            logger.warning("ElevenLabs API check skipped: ELEVENLABS_API_KEY not set")
+
+        # HIGH-06: LLM provider reachability check
+        try:
+            factory = ModelFactory()
+            if factory.primary.is_available():
+                logger.info(f"Primary LLM provider ({factory.primary.provider_name}): OK")
+            else:
+                logger.warning(f"Primary LLM provider ({factory.primary.provider_name}): UNAVAILABLE")
+        except Exception as e:
+            logger.warning(f"LLM provider check failed: {e}")
+
         logger.info("Health check passed")
         print("OK — config valid, env loaded")
         sys.exit(0)
@@ -221,32 +297,13 @@ def main():
     validate_env(required)
 
     # #25: Idempotency — prevent concurrent/duplicate runs
-    # HIGH-10: Verify PID in lock file is still running before rejecting
+    # MED-02: JSON lock file with 24h stale safety valve
     lock_file = Path("data/.pipeline.lock")
     if lock_file.exists() and not args.force:
-        try:
-            stored_pid = int(lock_file.read_text().strip())
-            try:
-                os.kill(stored_pid, 0)  # Check if process exists (signal 0 = no-op)
-                # Process exists — lock is valid
-                logger.error(
-                    f"Pipeline lock file exists (PID {stored_pid} is running). "
-                    "Use --force to override."
-                )
-                sys.exit(1)
-            except (OSError, ProcessLookupError):
-                # PID not running — stale lock file, safe to remove
-                logger.warning(
-                    f"Stale lock file found (PID {stored_pid} not running). Removing."
-                )
-                lock_file.unlink(missing_ok=True)
-        except (ValueError, OSError):
-            # Can't read/parse lock file — treat as stale
-            logger.warning("Could not parse lock file PID. Removing stale lock.")
-            lock_file.unlink(missing_ok=True)
+        if _check_lock_file(lock_file, logger):
+            sys.exit(1)
     try:
-        lock_file.parent.mkdir(parents=True, exist_ok=True)
-        lock_file.write_text(str(os.getpid()))
+        _write_lock_file(lock_file)
     except OSError as e:
         logger.warning(f"Could not create lock file: {e}")
 
