@@ -17,6 +17,8 @@ import hmac
 import json
 import os
 import random
+import shutil
+import tempfile
 import time
 import logging
 
@@ -111,41 +113,57 @@ class IntegrationAgent:
 
         files = {}
 
-        # Excel with 2 sheets
-        excel_path = f"{base}.xlsx"
-        with pd.ExcelWriter(excel_path, engine='openpyxl') as w:
-            df_summary.to_excel(w, sheet_name='Summary', index=False)
-            df_detail.to_excel(w, sheet_name='Details', index=False)
-            # MED-5: Auto-fit column widths for readability
-            for sheet_name in ['Summary', 'Details']:
-                ws = w.sheets[sheet_name]
-                for col in ws.iter_cols(min_row=1, max_row=1):
-                    for cell in col:
-                        col_letter = cell.column_letter
-                        max_width = max(
-                            len(str(cell.value or "")),
-                            max((len(str(c.value or "")) for c in ws[col_letter]), default=0),
-                        )
-                        ws.column_dimensions[col_letter].width = min(max_width + 2, 60)
-        files["excel"] = excel_path
-        logger.info(f"Excel: {excel_path}")
+        # MED-03: Atomic export — write to temp dir, then move to final location
+        with tempfile.TemporaryDirectory(prefix="qm_export_") as tmp_dir:
+            tmp_base = Path(tmp_dir) / f"QM_{timestamp}"
 
-        # CSV files
-        csv_summary_path = f"{base}_summary.csv"
-        csv_details_path = f"{base}_details.csv"
-        df_summary.to_csv(csv_summary_path, index=False)
-        df_detail.to_csv(csv_details_path, index=False)
+            # Excel with 2 sheets
+            tmp_excel = f"{tmp_base}.xlsx"
+            with pd.ExcelWriter(tmp_excel, engine='openpyxl') as w:
+                df_summary.to_excel(w, sheet_name='Summary', index=False)
+                df_detail.to_excel(w, sheet_name='Details', index=False)
+                # MED-5: Auto-fit column widths for readability
+                for sheet_name in ['Summary', 'Details']:
+                    ws = w.sheets[sheet_name]
+                    for col in ws.iter_cols(min_row=1, max_row=1):
+                        for cell in col:
+                            col_letter = cell.column_letter
+                            max_width = max(
+                                len(str(cell.value or "")),
+                                max((len(str(c.value or "")) for c in ws[col_letter]), default=0),
+                            )
+                            ws.column_dimensions[col_letter].width = min(max_width + 2, 60)
+
+            # CSV files
+            tmp_csv_summary = f"{tmp_base}_summary.csv"
+            tmp_csv_details = f"{tmp_base}_details.csv"
+            df_summary.to_csv(tmp_csv_summary, index=False)
+            df_detail.to_csv(tmp_csv_details, index=False)
+
+            # JSON
+            tmp_json = self._export_json_to_dir(
+                evaluations,
+                evaluations[0].get("model_used", "unknown") if evaluations else "unknown",
+                Path(tmp_dir),
+                timestamp=timestamp,
+            )
+
+            # Move all files atomically to final output folder
+            excel_path = str(self.output_folder / f"QM_{timestamp}.xlsx")
+            csv_summary_path = str(self.output_folder / f"QM_{timestamp}_summary.csv")
+            csv_details_path = str(self.output_folder / f"QM_{timestamp}_details.csv")
+            json_path = str(self.output_folder / f"QM_{timestamp}.json")
+
+            shutil.move(tmp_excel, excel_path)
+            shutil.move(tmp_csv_summary, csv_summary_path)
+            shutil.move(tmp_csv_details, csv_details_path)
+            shutil.move(tmp_json, json_path)
+
+        files["excel"] = excel_path
         files["csv_summary"] = csv_summary_path
         files["csv_details"] = csv_details_path
-        logger.info(f"CSV: {csv_summary_path}, {csv_details_path}")
-
-        # JSON (reuse same timestamp)
-        json_path = self.export_json(
-            evaluations,
-            evaluations[0].get("model_used", "unknown") if evaluations else "unknown",
-            timestamp=timestamp,
-        )
         files["json"] = json_path
+        logger.info(f"Exported (atomic): {excel_path}")
 
         # Webhook (if configured)
         if self.webhook_url:
@@ -168,10 +186,15 @@ class IntegrationAgent:
 
     def export_json(self, evaluations: List[Dict], model_name: str,
                     timestamp: Optional[str] = None) -> str:
-        """Export evaluations to JSON file. Returns filepath."""
+        """Export evaluations to JSON file in the default output folder."""
+        return self._export_json_to_dir(evaluations, model_name, self.output_folder, timestamp)
+
+    def _export_json_to_dir(self, evaluations: List[Dict], model_name: str,
+                            output_dir: Path, timestamp: Optional[str] = None) -> str:
+        """Export evaluations to JSON file in the given directory. Returns filepath."""
         if timestamp is None:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        json_path = str(self.output_folder / f"QM_{timestamp}.json")
+        json_path = str(output_dir / f"QM_{timestamp}.json")
 
         total_cost = sum(e.get("cost_usd", 0) for e in evaluations)
 
