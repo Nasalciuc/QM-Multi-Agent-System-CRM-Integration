@@ -49,6 +49,16 @@ _AUDIO_MAGIC_NUMBERS = {
 _MAX_AUDIO_FILE_MB = 500
 _MAX_AUDIO_FILE_BYTES = _MAX_AUDIO_FILE_MB * 1024 * 1024
 
+# COST-02: Minimum audio duration to justify an API call
+_DEFAULT_MIN_AUDIO_DURATION_SEC = 5
+
+# COST-01: Audio pre-processing constants
+_TARGET_SAMPLE_RATE = 16_000       # 16 kHz mono — Scribe v2 internal rate
+_SILENCE_THRESHOLD_DB = -40        # dBFS below which audio is considered silence
+_MIN_SILENCE_DURATION_MS = 2000    # internal silence gaps longer than this get compressed
+_COMPRESSED_SILENCE_MS = 1000      # replace long gaps with 1 s of silence
+_SAVINGS_THRESHOLD_PCT = 5         # only use preprocessed file if savings > 5 %
+
 
 class ElevenLabsSTTAgent:
     """Agent: Speech-to-Text with ElevenLabs Scribe v2 + diarization."""
@@ -76,6 +86,8 @@ class ElevenLabsSTTAgent:
         stt_cache_dir: Optional[str] = "data/stt_cache",
         enable_stt_cache: bool = True,
         stt_cache_ttl_days: int = 30,
+        min_audio_duration_sec: float = _DEFAULT_MIN_AUDIO_DURATION_SEC,
+        preprocess_audio: bool = True,
     ):
         """
         Initialize with ElevenLabs client.
@@ -96,6 +108,8 @@ class ElevenLabsSTTAgent:
             stt_cache_dir: Directory for STT transcript cache (None = disabled).
             enable_stt_cache: Enable/disable STT transcript caching.
             stt_cache_ttl_days: Days to keep cached transcripts before expiry.
+            min_audio_duration_sec: Skip transcription for audio shorter than this (COST-02).
+            preprocess_audio: Trim silence, downsample to 16 kHz mono, compress long gaps (COST-01).
         """
         self.client = client
         self.persist_transcripts = persist_transcripts
@@ -109,6 +123,8 @@ class ElevenLabsSTTAgent:
         self.language_code = language_code
         self.keyterms = keyterms or []
         self.delay_between_calls = delay_between_calls
+        self.min_audio_duration_sec = min_audio_duration_sec
+        self.preprocess_audio = preprocess_audio
 
         # STT transcript cache
         self._stt_cache = STTCache(
@@ -179,58 +195,103 @@ class ElevenLabsSTTAgent:
         # CRIT-NEW-4: Validate before spending API credits
         self.validate_audio_file(audio_path)
 
-        last_error: Optional[Exception] = None
-        for attempt in range(self.MAX_RETRIES + 1):
+        # COST-02: Skip very short audio (< min_audio_duration_sec)
+        duration_sec = self._get_duration_seconds(audio_path)
+        if duration_sec is not None and duration_sec < self.min_audio_duration_sec:
+            logger.info(
+                f"COST-02: Skipping {audio_path.name} — too short "
+                f"({duration_sec:.1f}s < {self.min_audio_duration_sec}s)"
+            )
+            return {
+                "text": "",
+                "raw_text": "",
+                "speakers_detected": 0,
+                "language_code": self.language_code,
+                "diarized": False,
+                "speakers_merged": False,
+                "skipped_short": True,
+            }
+
+        # COST-01: Pre-process audio to reduce billable duration
+        preprocessed_path: Optional[Path] = None
+        preprocess_stats: Optional[dict] = None
+        effective_audio = audio_path
+        if self.preprocess_audio:
             try:
-                result = self._call_api_with_timeout(audio_path)
+                preprocessed_path, preprocess_stats = self._preprocess_audio(audio_path)
+                if preprocessed_path is not None:
+                    effective_audio = preprocessed_path
+            except Exception as exc:
+                logger.warning(
+                    f"COST-01: Pre-processing failed for {audio_path.name}, "
+                    f"using original: {exc}"
+                )
 
-                # Build structured result from Scribe v2 response
-                raw_text = result.text.strip() if hasattr(result, 'text') else ""
-                words = getattr(result, 'words', None) or []
-                language = getattr(result, 'language_code', None) or self.language_code
+        last_error: Optional[Exception] = None
+        try:
+            for attempt in range(self.MAX_RETRIES + 1):
+                try:
+                    result = self._call_api_with_timeout(effective_audio)
 
-                # Build diarized transcript from word-level speaker tags
-                if self.diarize and words:
-                    diarized_text, speakers = self._build_diarized_transcript(words)
-                else:
-                    diarized_text = raw_text
-                    speakers = set()
+                    # Build structured result from Scribe v2 response
+                    raw_text = result.text.strip() if hasattr(result, 'text') else ""
+                    words = getattr(result, 'words', None) or []
+                    language = getattr(result, 'language_code', None) or self.language_code
 
-                return {
-                    "text": diarized_text,
-                    "raw_text": raw_text,
-                    "speakers_detected": len(speakers),
-                    "language_code": language,
-                    "diarized": bool(self.diarize and words),
-                }
+                    # Build diarized transcript from word-level speaker tags
+                    if self.diarize and words:
+                        diarized_text, speakers, speakers_merged = self._build_diarized_transcript(words)
+                    else:
+                        diarized_text = raw_text
+                        speakers = set()
+                        speakers_merged = False
 
-            except Exception as e:
-                last_error = e
-                error_msg = str(e).lower()
-                # Don't retry quota/auth errors
-                if any(kw in error_msg for kw in (
-                    "quota_exceeded", "unauthorized", "forbidden", "invalid_api_key"
-                )):
-                    raise
-                if attempt < self.MAX_RETRIES:
-                    # #13: Respect Retry-After header if available
-                    retry_after = getattr(e, 'retry_after', None)
-                    if retry_after is None and hasattr(e, 'response'):
-                        resp = getattr(e, 'response', None)
-                        if resp is not None and hasattr(resp, 'headers'):
-                            retry_after_str = resp.headers.get('Retry-After')
-                            if retry_after_str:
-                                try:
-                                    retry_after = float(retry_after_str)
-                                except (ValueError, TypeError):
-                                    pass
-                    wait = retry_after if retry_after else self.RETRY_BACKOFF_BASE ** (attempt + 1)
-                    logger.warning(
-                        f"Transient STT error (attempt {attempt + 1}/{self.MAX_RETRIES + 1}): {e}. "
-                        f"Retrying in {wait}s..."
-                    )
-                    time.sleep(wait)
-        raise last_error  # type: ignore[misc]
+                    result_dict = {
+                        "text": diarized_text,
+                        "raw_text": raw_text,
+                        "speakers_detected": len(speakers),
+                        "language_code": language,
+                        "diarized": bool(self.diarize and words),
+                        "speakers_merged": speakers_merged,
+                    }
+                    if preprocess_stats:
+                        result_dict["preprocess"] = preprocess_stats
+                    return result_dict
+
+                except Exception as e:
+                    last_error = e
+                    error_msg = str(e).lower()
+                    # Don't retry quota/auth errors
+                    if any(kw in error_msg for kw in (
+                        "quota_exceeded", "unauthorized", "forbidden", "invalid_api_key"
+                    )):
+                        raise
+                    if attempt < self.MAX_RETRIES:
+                        # #13: Respect Retry-After header if available
+                        retry_after = getattr(e, 'retry_after', None)
+                        if retry_after is None and hasattr(e, 'response'):
+                            resp = getattr(e, 'response', None)
+                            if resp is not None and hasattr(resp, 'headers'):
+                                retry_after_str = resp.headers.get('Retry-After')
+                                if retry_after_str:
+                                    try:
+                                        retry_after = float(retry_after_str)
+                                    except (ValueError, TypeError):
+                                        pass
+                        wait = retry_after if retry_after else self.RETRY_BACKOFF_BASE ** (attempt + 1)
+                        logger.warning(
+                            f"Transient STT error (attempt {attempt + 1}/{self.MAX_RETRIES + 1}): {e}. "
+                            f"Retrying in {wait}s..."
+                        )
+                        time.sleep(wait)
+            raise last_error  # type: ignore[misc]
+        finally:
+            # COST-01: Clean up temporary preprocessed file
+            if preprocessed_path is not None and preprocessed_path.exists():
+                try:
+                    preprocessed_path.unlink()
+                except OSError:
+                    pass
 
     def _call_api_with_timeout(self, audio_path: Path):
         """CRIT-3: Cross-platform timeout using ThreadPoolExecutor.
@@ -273,19 +334,21 @@ class ElevenLabsSTTAgent:
           - speaker_id: str | None (e.g. "speaker_0", "speaker_1")
           - type: str ("word", "punctuation", "spacing")
 
+        SPEAKER-02: If >2 speakers found in words, merges minor speakers
+        into the two most-frequent speakers (by word count) before building
+        lines. This is a safety net in case num_speakers=2 still yields >2
+        speaker_ids from the API.
+
         Returns:
-            (diarized_text, speakers_set)
+            (diarized_text, speakers_set, speakers_merged)
         """
         if not words:
-            return "", set()
+            return "", set(), False
 
-        lines = []
-        current_speaker = None
-        current_line_words = []
-        speakers: set = set()
-
+        # First pass: extract all words with speaker info
+        parsed_words = []
+        speaker_word_counts: dict = {}
         for word_obj in words:
-            # Support both dict and object attribute access
             if isinstance(word_obj, dict):
                 text = word_obj.get("text", "")
                 speaker = word_obj.get("speaker_id")
@@ -294,17 +357,60 @@ class ElevenLabsSTTAgent:
                 text = getattr(word_obj, "text", "")
                 speaker = getattr(word_obj, "speaker_id", None)
                 wtype = getattr(word_obj, "type", "word")
+            parsed_words.append((text, speaker, wtype))
+            if speaker and wtype == "word":
+                speaker_word_counts[speaker] = speaker_word_counts.get(speaker, 0) + 1
 
-            if speaker:
-                speakers.add(speaker)
+        all_speakers = set(speaker_word_counts.keys())
+        speakers_merged = False
+        merge_map: dict = {}
+
+        if len(all_speakers) > 2:
+            # SPEAKER-02: Merge minor speakers into top-2 by word count
+            sorted_speakers = sorted(
+                all_speakers,
+                key=lambda s: -speaker_word_counts.get(s, 0)
+            )
+            top2 = set(sorted_speakers[:2])
+            speakers_merged = True
+            logger.warning(
+                f"SPEAKER-02: {len(all_speakers)} speaker_ids found in words, "
+                f"merging to top-2: {sorted_speakers[:2]}. "
+                f"Word counts: {speaker_word_counts}"
+            )
+            # Build merge map: minor → nearest preceding major speaker
+            last_major = None
+            first_major = None
+            for _, speaker, _ in parsed_words:
+                if speaker in top2:
+                    if first_major is None:
+                        first_major = speaker
+                    last_major = speaker
+                elif speaker and speaker not in merge_map:
+                    merge_map[speaker] = last_major if last_major else None
+            # Backfill any that appeared before any major speaker
+            for k, v in merge_map.items():
+                if v is None:
+                    merge_map[k] = first_major
+
+        # Second pass: build lines with merged speaker IDs
+        lines = []
+        current_speaker = None
+        current_line_words = []
+        effective_speakers: set = set()
+
+        for text, speaker, wtype in parsed_words:
+            effective = merge_map.get(speaker, speaker) if speaker else speaker
+            if effective:
+                effective_speakers.add(effective)
 
             # Speaker changed — flush current line
-            if speaker and speaker != current_speaker:
+            if effective and effective != current_speaker:
                 if current_line_words:
                     label = _speaker_label(current_speaker)
                     lines.append(f"{label}: {''.join(current_line_words).strip()}")
                 current_line_words = []
-                current_speaker = speaker
+                current_speaker = effective
 
             if wtype == "spacing":
                 current_line_words.append(" ")
@@ -316,7 +422,7 @@ class ElevenLabsSTTAgent:
             label = _speaker_label(current_speaker)
             lines.append(f"{label}: {''.join(current_line_words).strip()}")
 
-        return "\n".join(lines), speakers
+        return "\n".join(lines), effective_speakers, speakers_merged
 
     def _save_transcript(self, filename: str, transcript: str) -> Optional[Path]:
         """Save transcript to disk as .txt file."""
@@ -481,6 +587,101 @@ class ElevenLabsSTTAgent:
 
         return transcripts
 
+    def _preprocess_audio(
+        self, audio_path: Path
+    ) -> tuple[Optional[Path], Optional[dict]]:
+        """COST-01: Pre-process audio to reduce billable STT duration.
+
+        Steps:
+            1. Convert to mono, downsample to 16 kHz (Scribe v2 internal rate).
+            2. Trim leading/trailing silence.
+            3. Compress long internal silence gaps (>2 s → 1 s).
+
+        Only writes a temp file if the savings exceed _SAVINGS_THRESHOLD_PCT.
+
+        Returns:
+            (preprocessed_path | None, stats_dict | None)
+            preprocessed_path is None when savings are too small to bother.
+        """
+        from pydub import AudioSegment
+        from pydub.silence import detect_nonsilent
+
+        audio = AudioSegment.from_file(str(audio_path))
+        original_ms = len(audio)
+
+        # 1. Mono + downsample
+        if audio.channels > 1:
+            audio = audio.set_channels(1)
+        if audio.frame_rate != _TARGET_SAMPLE_RATE:
+            audio = audio.set_frame_rate(_TARGET_SAMPLE_RATE)
+
+        # 2. Trim leading/trailing silence
+        nonsilent_ranges = detect_nonsilent(
+            audio,
+            min_silence_len=500,
+            silence_thresh=_SILENCE_THRESHOLD_DB,
+        )
+        if not nonsilent_ranges:
+            # Entire audio is silence — nothing to send
+            return None, {
+                "original_duration_ms": original_ms,
+                "processed_duration_ms": 0,
+                "savings_pct": 100.0,
+                "action": "all_silence",
+            }
+
+        start_trim = max(0, nonsilent_ranges[0][0] - 200)  # 200 ms padding
+        end_trim = min(len(audio), nonsilent_ranges[-1][1] + 200)
+        audio = audio[start_trim:end_trim]
+
+        # 3. Compress long internal silence gaps
+        nonsilent_ranges = detect_nonsilent(
+            audio,
+            min_silence_len=_MIN_SILENCE_DURATION_MS,
+            silence_thresh=_SILENCE_THRESHOLD_DB,
+        )
+        if len(nonsilent_ranges) > 1:
+            filler = AudioSegment.silent(
+                duration=_COMPRESSED_SILENCE_MS,
+                frame_rate=_TARGET_SAMPLE_RATE,
+            )
+            chunks = []
+            for idx, (seg_start, seg_end) in enumerate(nonsilent_ranges):
+                chunks.append(audio[seg_start:seg_end])
+                if idx < len(nonsilent_ranges) - 1:
+                    chunks.append(filler)
+            combined = chunks[0]
+            for chunk in chunks[1:]:
+                combined = combined + chunk
+            audio = combined
+
+        processed_ms = len(audio)
+        savings_pct = round((1 - processed_ms / max(1, original_ms)) * 100, 1)
+
+        stats: dict = {
+            "original_duration_ms": original_ms,
+            "processed_duration_ms": processed_ms,
+            "savings_pct": savings_pct,
+        }
+
+        if savings_pct < _SAVINGS_THRESHOLD_PCT:
+            stats["action"] = "no_change"
+            logger.debug(
+                f"COST-01: Savings too small ({savings_pct}%) for {audio_path.name}, using original"
+            )
+            return None, stats
+
+        # Export preprocessed file next to original (temp)
+        processed_path = audio_path.parent / f".{audio_path.stem}.processed.mp3"
+        audio.export(str(processed_path), format="mp3")
+        stats["action"] = "preprocessed"
+        logger.info(
+            f"COST-01: Pre-processed {audio_path.name} — "
+            f"{original_ms / 1000:.1f}s → {processed_ms / 1000:.1f}s "
+            f"(saved {savings_pct}%)"
+        )
+        return processed_path, stats
+
     def _get_duration(self, file_path: Path) -> Optional[float]:
         """Get audio duration in minutes using pydub."""
         try:
@@ -492,6 +693,19 @@ class ElevenLabsSTTAgent:
             return None
         except Exception as e:
             # CRIT-6: Log actual error instead of swallowing silently
+            logger.warning(f"Cannot read duration for {file_path.name}: {type(e).__name__}: {e}")
+            return None
+
+    def _get_duration_seconds(self, file_path: Path) -> Optional[float]:
+        """COST-02: Get audio duration in seconds using pydub."""
+        try:
+            from pydub import AudioSegment
+            audio = AudioSegment.from_file(str(file_path))
+            return len(audio) / 1000.0
+        except ImportError:
+            logger.warning(f"pydub not installed — cannot check duration for {file_path.name}")
+            return None
+        except Exception as e:
             logger.warning(f"Cannot read duration for {file_path.name}: {type(e).__name__}: {e}")
             return None
 

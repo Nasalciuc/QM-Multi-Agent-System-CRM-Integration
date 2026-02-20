@@ -106,6 +106,67 @@ class TestTranscriptCleaner:
         result = cleaner.clean(raw)
         assert "like" in result.lower()
 
+    # --- SPEAKER-03: >2 speakers collapsed to 2 roles ---
+
+    def test_five_speakers_collapsed_to_two_roles(self):
+        """SPEAKER-03: Transcript with 5 speakers should collapse to Agent/Client only."""
+        cleaner = TranscriptCleaner(direction="outbound", remove_fillers=False)
+        raw = (
+            "Speaker 0: Hi there\n"       # Minor → should merge
+            "Speaker 1: Welcome\n"         # Major speaker A (most lines)
+            "Speaker 0: Thanks\n"
+            "Speaker 1: How can I help\n"
+            "Speaker 2: I need help\n"     # Major speaker B (second most lines)
+            "Speaker 1: Sure\n"
+            "Speaker 2: With my account\n"
+            "Speaker 3: Also this\n"       # Minor
+            "Speaker 1: Let me check\n"
+            "Speaker 2: Thanks\n"
+            "Speaker 4: One more thing\n"  # Minor
+        )
+        result = cleaner.clean(raw)
+        lines = result.strip().split("\n")
+        # Every line must be either Agent: or Client:
+        for line in lines:
+            assert line.startswith("Agent:") or line.startswith("Client:"), f"Unexpected label: {line}"
+        # Must have both roles
+        labels = {l.split(":")[0] for l in lines}
+        assert labels == {"Agent", "Client"}
+
+    def test_three_speakers_minor_becomes_client(self):
+        """SPEAKER-03: Minor speaker merges into nearest major speaker."""
+        cleaner = TranscriptCleaner(direction="outbound", remove_fillers=False)
+        # Speaker 0 = Agent (most lines, appears first)
+        # Speaker 1 = Client (second most lines)
+        # Speaker 2 = minor → should merge toward Client (nearest preceding major)
+        raw = (
+            "Speaker 0: Hello\n"
+            "Speaker 1: Hi I need flights\n"
+            "Speaker 0: Sure thing\n"
+            "Speaker 1: From Dallas\n"
+            "Speaker 1: To Beijing\n"
+            "Speaker 2: Also want hotels\n"
+            "Speaker 0: Got it\n"
+        )
+        result = cleaner.clean(raw)
+        lines = result.strip().split("\n")
+        # Speaker 2 should become Client (merged with nearest Speaker 1)
+        for line in lines:
+            assert line.startswith("Agent:") or line.startswith("Client:"), f"Unexpected label: {line}"
+        # "Also want hotels" should be Client
+        hotel_line = [l for l in lines if "Also want hotels" in l][0]
+        assert hotel_line.startswith("Client:")
+
+    def test_two_speakers_unchanged(self):
+        """SPEAKER-03: Exactly 2 speakers should not trigger merging."""
+        cleaner = TranscriptCleaner(direction="outbound", remove_fillers=False)
+        raw = "Speaker 0: Hi\nSpeaker 1: Hello\nSpeaker 0: How are you"
+        result = cleaner.clean(raw)
+        lines = result.strip().split("\n")
+        assert lines[0].startswith("Agent:")
+        assert lines[1].startswith("Client:")
+        assert lines[2].startswith("Agent:")
+
 
 # ═══════════════════════════════════════════════════════════════════
 # TokenCounter

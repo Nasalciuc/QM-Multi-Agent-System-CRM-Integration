@@ -16,8 +16,10 @@ elevenlabs:
   output_folder: "data/transcripts"
   persist_transcripts: true    # Save transcripts to disk after transcription
   diarize: true                # Enable speaker diarization
-  num_speakers: null            # null = auto-detect speaker count
+  num_speakers: 2               # Force 2 speakers (agent + client) — auto-detect often over-segments
   diarization_threshold: null   # null = use ElevenLabs default
+  min_audio_duration_sec: 5     # Skip transcription for audio shorter than this (COST-02)
+  preprocess_audio: true         # Trim silence, downsample to 16kHz mono, compress gaps (COST-01)
   tag_audio_events: false       # Tag non-speech events (laughter, music)
   language_code: null            # null = auto-detect language
   keyterms: []                  # Domain-specific terms to boost recognition

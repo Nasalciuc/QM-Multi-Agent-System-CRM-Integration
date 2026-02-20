@@ -335,6 +335,8 @@ def main():
         stt_cache_dir=el_config.get("stt_cache_dir", "data/stt_cache"),
         enable_stt_cache=el_config.get("enable_stt_cache", True),
         stt_cache_ttl_days=el_config.get("stt_cache_ttl_days", 30),
+        min_audio_duration_sec=el_config.get("min_audio_duration_sec", 5),
+        preprocess_audio=el_config.get("preprocess_audio", True),
     )
 
     # Initialize Agent 3: QualityManagement (with ModelFactory fallback)

@@ -136,16 +136,18 @@ class TestDiarization:
             {"text": "there", "speaker_id": "speaker_0", "type": "word"},
             {"text": "Hello", "speaker_id": "speaker_1", "type": "word"},
         ]
-        text, speakers = ElevenLabsSTTAgent._build_diarized_transcript(words)
+        text, speakers, merged = ElevenLabsSTTAgent._build_diarized_transcript(words)
         assert "Speaker 0:" in text
         assert "Speaker 1:" in text
         assert len(speakers) == 2
+        assert merged is False
 
     def test_build_diarized_transcript_empty(self):
         """Empty words list should return empty string."""
-        text, speakers = ElevenLabsSTTAgent._build_diarized_transcript([])
+        text, speakers, merged = ElevenLabsSTTAgent._build_diarized_transcript([])
         assert text == ""
         assert len(speakers) == 0
+        assert merged is False
 
     def test_speaker_label_mapping(self):
         """_speaker_label should map speaker_0 → 'Speaker 0'."""
@@ -163,6 +165,47 @@ class TestDiarization:
         result = agent.transcribe(fake_audio)
         assert result["diarized"] is False
         assert result["speakers_detected"] == 0
+
+    def test_excess_speakers_merged_to_two(self):
+        """SPEAKER-02: >2 speaker_ids should be merged into top-2 by word count."""
+        # speaker_0: 4 words (major), speaker_1: 3 words (major)
+        # speaker_2: 1 word (minor) → merge into nearest major
+        # speaker_3: 1 word (minor) → merge into nearest major
+        words = [
+            {"text": "Hi", "speaker_id": "speaker_0", "type": "word"},
+            {"text": " ", "speaker_id": "speaker_0", "type": "spacing"},
+            {"text": "how", "speaker_id": "speaker_0", "type": "word"},
+            {"text": " ", "speaker_id": "speaker_0", "type": "spacing"},
+            {"text": "are", "speaker_id": "speaker_0", "type": "word"},
+            {"text": " ", "speaker_id": "speaker_0", "type": "spacing"},
+            {"text": "you", "speaker_id": "speaker_0", "type": "word"},
+            {"text": "Good", "speaker_id": "speaker_1", "type": "word"},
+            {"text": " ", "speaker_id": "speaker_1", "type": "spacing"},
+            {"text": "thanks", "speaker_id": "speaker_1", "type": "word"},
+            {"text": " ", "speaker_id": "speaker_1", "type": "spacing"},
+            {"text": "bye", "speaker_id": "speaker_1", "type": "word"},
+            {"text": "Wait", "speaker_id": "speaker_2", "type": "word"},
+            {"text": "Also", "speaker_id": "speaker_3", "type": "word"},
+        ]
+        text, speakers, merged = ElevenLabsSTTAgent._build_diarized_transcript(words)
+        assert merged is True
+        # Only top-2 effective speaker IDs remain
+        assert len(speakers) == 2
+        assert "speaker_0" in speakers
+        assert "speaker_1" in speakers
+        # All lines should only reference Speaker 0 or Speaker 1
+        for line in text.strip().split("\n"):
+            assert line.startswith("Speaker 0:") or line.startswith("Speaker 1:"), f"Unexpected: {line}"
+
+    def test_two_speakers_not_merged(self):
+        """SPEAKER-02: Exactly 2 speakers should not trigger merging."""
+        words = [
+            {"text": "Hello", "speaker_id": "speaker_0", "type": "word"},
+            {"text": "Hi", "speaker_id": "speaker_1", "type": "word"},
+        ]
+        text, speakers, merged = ElevenLabsSTTAgent._build_diarized_transcript(words)
+        assert merged is False
+        assert len(speakers) == 2
 
 
 # --- Tests: Transcript Persistence ---
@@ -387,3 +430,192 @@ class TestElevenLabsRetry:
             agent.transcribe(audio)
         # Should fail on first attempt without retrying
         assert agent._call_api_with_timeout.call_count == 1
+
+
+# ═══════════════════════════════════════════════════════════════════
+# COST-02: Skip short audio
+# ═══════════════════════════════════════════════════════════════════
+
+class TestSkipShortAudio:
+    """COST-02: Audio shorter than min_audio_duration_sec should be skipped."""
+
+    def test_short_audio_skipped(self, mock_client, tmp_path):
+        """Audio < 5 seconds should return empty result with skipped_short=True."""
+        agent = ElevenLabsSTTAgent(
+            client=mock_client,
+            persist_transcripts=False,
+            enable_stt_cache=False,
+            min_audio_duration_sec=5,
+        )
+        # Create a very short WAV file (~0.1 seconds of silence)
+        from pydub import AudioSegment
+        short_audio = AudioSegment.silent(duration=100)  # 100ms
+        audio_path = tmp_path / "short.wav"
+        short_audio.export(str(audio_path), format="wav")
+
+        result = agent.transcribe(audio_path)
+        assert result["skipped_short"] is True
+        assert result["text"] == ""
+        assert result["speakers_detected"] == 0
+        # API should NOT have been called
+        mock_client.speech_to_text.convert.assert_not_called()
+
+    def test_normal_audio_not_skipped(self, mock_client, tmp_path):
+        """Audio >= 5 seconds should NOT be skipped."""
+        agent = ElevenLabsSTTAgent(
+            client=mock_client,
+            persist_transcripts=False,
+            enable_stt_cache=False,
+            min_audio_duration_sec=5,
+        )
+        from pydub import AudioSegment
+        normal_audio = AudioSegment.silent(duration=6000)  # 6 seconds
+        audio_path = tmp_path / "normal.wav"
+        normal_audio.export(str(audio_path), format="wav")
+
+        result = agent.transcribe(audio_path)
+        assert result.get("skipped_short") is not True
+        mock_client.speech_to_text.convert.assert_called_once()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# COST-01: Audio pre-processing
+# ═══════════════════════════════════════════════════════════════════
+
+class TestPreprocessAudio:
+    """COST-01: Pre-processing trims silence and downsamples before API call."""
+
+    def test_preprocess_trims_silence(self, mock_client, tmp_path):
+        """Audio with large leading/trailing silence should be trimmed."""
+        from pydub import AudioSegment
+        from pydub.generators import Sine
+
+        # Build: 5s silence + 2s tone + 5s silence = 12s total
+        silence = AudioSegment.silent(duration=5000)
+        tone = Sine(440).to_audio_segment(duration=2000).apply_gain(-20)
+        audio = silence + tone + silence
+        audio_path = tmp_path / "padded.wav"
+        audio.export(str(audio_path), format="wav")
+
+        agent = ElevenLabsSTTAgent(
+            client=mock_client,
+            persist_transcripts=False,
+            enable_stt_cache=False,
+            preprocess_audio=True,
+        )
+        preprocessed, stats = agent._preprocess_audio(audio_path)
+        assert preprocessed is not None
+        assert stats is not None
+        assert stats["savings_pct"] > 10
+        assert stats["action"] == "preprocessed"
+        assert stats["processed_duration_ms"] < stats["original_duration_ms"]
+        # Cleanup
+        if preprocessed.exists():
+            preprocessed.unlink()
+
+    def test_preprocess_no_change_when_savings_small(self, mock_client, tmp_path):
+        """Audio with negligible silence should not produce a temp file."""
+        from pydub import AudioSegment
+        from pydub.generators import Sine
+
+        # Pure tone, no silence to trim
+        tone = Sine(440).to_audio_segment(duration=6000).apply_gain(-20)
+        audio_path = tmp_path / "clean.wav"
+        tone.export(str(audio_path), format="wav")
+
+        agent = ElevenLabsSTTAgent(
+            client=mock_client,
+            persist_transcripts=False,
+            enable_stt_cache=False,
+            preprocess_audio=True,
+        )
+        preprocessed, stats = agent._preprocess_audio(audio_path)
+        assert preprocessed is None
+        assert stats["action"] == "no_change"
+
+    def test_preprocess_all_silence(self, mock_client, tmp_path):
+        """Audio that is entirely silence returns action=all_silence."""
+        from pydub import AudioSegment
+
+        silent = AudioSegment.silent(duration=3000)
+        audio_path = tmp_path / "silent.wav"
+        silent.export(str(audio_path), format="wav")
+
+        agent = ElevenLabsSTTAgent(
+            client=mock_client,
+            persist_transcripts=False,
+            enable_stt_cache=False,
+            preprocess_audio=True,
+        )
+        preprocessed, stats = agent._preprocess_audio(audio_path)
+        assert preprocessed is None
+        assert stats["action"] == "all_silence"
+        assert stats["savings_pct"] == 100.0
+
+    def test_preprocess_compresses_long_gaps(self, mock_client, tmp_path):
+        """Long internal silence gaps (>2s) should be compressed to 1s."""
+        from pydub import AudioSegment
+        from pydub.generators import Sine
+
+        # 2s tone + 6s silence + 2s tone = 10s
+        tone = Sine(440).to_audio_segment(duration=2000).apply_gain(-20)
+        gap = AudioSegment.silent(duration=6000)
+        audio = tone + gap + tone
+        audio_path = tmp_path / "gapped.wav"
+        audio.export(str(audio_path), format="wav")
+
+        agent = ElevenLabsSTTAgent(
+            client=mock_client,
+            persist_transcripts=False,
+            enable_stt_cache=False,
+            preprocess_audio=True,
+        )
+        preprocessed, stats = agent._preprocess_audio(audio_path)
+        assert preprocessed is not None
+        assert stats["savings_pct"] > 10
+        # Processed should be roughly 2s + 1s + 2s = 5s (± padding)
+        assert stats["processed_duration_ms"] < 7000
+        if preprocessed.exists():
+            preprocessed.unlink()
+
+    def test_preprocess_disabled(self, mock_client, tmp_path):
+        """When preprocess_audio=False, transcribe() should not call _preprocess_audio."""
+        from pydub import AudioSegment
+        from pydub.generators import Sine
+
+        tone = Sine(440).to_audio_segment(duration=6000).apply_gain(-20)
+        audio_path = tmp_path / "normal.wav"
+        tone.export(str(audio_path), format="wav")
+
+        agent = ElevenLabsSTTAgent(
+            client=mock_client,
+            persist_transcripts=False,
+            enable_stt_cache=False,
+            preprocess_audio=False,
+        )
+        result = agent.transcribe(audio_path)
+        assert result.get("preprocess") is None
+        mock_client.speech_to_text.convert.assert_called_once()
+
+    def test_preprocess_cleanup_on_success(self, mock_client, tmp_path):
+        """Preprocessed temp file should be cleaned up after transcription."""
+        from pydub import AudioSegment
+
+        # 3s silence + 2s silence + 3s silence (all silent but let's use tone)
+        from pydub.generators import Sine
+        silence = AudioSegment.silent(duration=5000)
+        tone = Sine(440).to_audio_segment(duration=2000).apply_gain(-20)
+        audio = silence + tone + silence
+        audio_path = tmp_path / "cleanup_test.wav"
+        audio.export(str(audio_path), format="wav")
+
+        agent = ElevenLabsSTTAgent(
+            client=mock_client,
+            persist_transcripts=False,
+            enable_stt_cache=False,
+            preprocess_audio=True,
+        )
+        result = agent.transcribe(audio_path)
+        # The temp .processed.mp3 file should have been cleaned up
+        processed_path = tmp_path / ".cleanup_test.processed.mp3"
+        assert not processed_path.exists()

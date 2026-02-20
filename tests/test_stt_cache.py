@@ -292,3 +292,100 @@ class TestLRUEviction:
         # oldest should have been evicted
         assert cache.load("newest") is not None
         assert cache.size() <= 2
+
+
+# --- Tests: COST-03 — Cache meta & orphan cleanup ---
+
+class TestCacheMeta:
+    """COST-03: save() should embed _cache_meta for audit/migration."""
+
+    def test_save_embeds_cache_meta(self, cache, cache_dir, audio_file, sample_transcript):
+        """Saved entries should contain _cache_meta with cached_at and cache_key."""
+        key = STTCache.cache_key(audio_file)
+        cache.save(key, sample_transcript)
+
+        path = Path(cache_dir) / f"{key}.json"
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        assert "_cache_meta" in data
+        assert "cached_at" in data["_cache_meta"]
+        assert data["_cache_meta"]["cache_key"] == key
+
+    def test_save_does_not_overwrite_existing_meta(self, cache, audio_file, cache_dir):
+        """If caller supplies _cache_meta, save() should preserve it."""
+        key = STTCache.cache_key(audio_file)
+        custom_meta = {"cached_at": 1234567890, "custom": True}
+        transcript = {"text": "hi", "raw_text": "hi", "_cache_meta": custom_meta}
+        cache.save(key, transcript)
+
+        path = Path(cache_dir) / f"{key}.json"
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # setdefault should keep original
+        assert data["_cache_meta"]["cached_at"] == 1234567890
+        assert data["_cache_meta"]["custom"] is True
+
+
+class TestCleanupOrphaned:
+    """COST-03: Orphan cleanup removes stale cache entries."""
+
+    def test_cleanup_removes_orphans(self, cache, cache_dir):
+        """Entries not in current_audio_keys should be removed."""
+        sample = {"text": "hello", "raw_text": "hello"}
+        cache.save("keep_me", sample)
+        cache.save("remove_me", sample)
+        cache.save("also_remove", sample)
+
+        removed = cache.cleanup_orphaned(current_audio_keys={"keep_me"})
+        assert removed == 2
+        assert cache.size() == 1
+        assert cache.load("keep_me") is not None
+
+    def test_cleanup_noop_when_none(self, cache, cache_dir):
+        """cleanup_orphaned(None) should be a no-op."""
+        sample = {"text": "hello", "raw_text": "hello"}
+        cache.save("entry1", sample)
+
+        removed = cache.cleanup_orphaned(current_audio_keys=None)
+        assert removed == 0
+        assert cache.size() == 1
+
+    def test_cleanup_noop_when_disabled(self, disabled_cache, cache_dir):
+        """Disabled cache should return 0."""
+        removed = disabled_cache.cleanup_orphaned(current_audio_keys=set())
+        assert removed == 0
+
+    def test_cleanup_all_orphans(self, cache, cache_dir):
+        """If current_audio_keys is empty set, all entries are orphans."""
+        sample = {"text": "hello", "raw_text": "hello"}
+        cache.save("a", sample)
+        cache.save("b", sample)
+
+        removed = cache.cleanup_orphaned(current_audio_keys=set())
+        assert removed == 2
+        assert cache.size() == 0
+
+
+class TestStartupInventory:
+    """COST-03: Startup log should include entry count."""
+
+    def test_init_logs_entry_count(self, tmp_path):
+        """STTCache init should log the number of entries found."""
+        cache_dir = str(tmp_path / "stt_cache")
+        # Create a cache with some entries
+        c = STTCache(cache_dir=cache_dir, enable=True)
+        c.save("entry1", {"text": "a", "raw_text": "a"})
+        c.save("entry2", {"text": "b", "raw_text": "b"})
+
+        # Re-initialize — should log "entries=2"
+        import logging
+        with patch.object(logging.getLogger("qa_system.stt_cache"), "info") as mock_info:
+            STTCache(cache_dir=cache_dir, enable=True)
+            init_calls = [
+                str(call) for call in mock_info.call_args_list
+                if "entries=" in str(call)
+            ]
+            assert len(init_calls) >= 1
+            assert "entries=2" in init_calls[0]

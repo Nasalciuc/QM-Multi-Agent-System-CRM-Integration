@@ -64,8 +64,10 @@ class STTCache:
         if self._enabled and self._cache_dir is not None:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
             self._cleanup_expired()
+            entry_count = self.size()
             logger.info(
-                f"STTCache initialized | dir={self._cache_dir} | ttl={self._ttl}s"
+                f"STTCache initialized | dir={self._cache_dir} | ttl={self._ttl}s | "
+                f"entries={entry_count}"
             )
 
     @property
@@ -172,6 +174,12 @@ class STTCache:
             return
 
         path = self._cache_dir / f"{key}.json"
+        # COST-03: Attach cache metadata for future migration / audit
+        enriched = dict(data)
+        enriched.setdefault("_cache_meta", {
+            "cached_at": time.time(),
+            "cache_key": key,
+        })
         fd = None
         tmp_path = None
         try:
@@ -180,7 +188,7 @@ class STTCache:
             )
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 fd = None  # os.fdopen takes ownership
-                json.dump(data, f, indent=2, ensure_ascii=False)
+                json.dump(enriched, f, indent=2, ensure_ascii=False)
             os.replace(tmp_path, str(path))
             self._saves += 1
             logger.debug(f"STT cache saved: {key[:12]}")
@@ -255,3 +263,36 @@ class STTCache:
         if not self._cache_dir or not self._cache_dir.exists():
             return 0
         return sum(1 for _ in self._cache_dir.glob("*.json"))
+
+    def cleanup_orphaned(
+        self,
+        current_audio_keys: Optional[set] = None,
+    ) -> int:
+        """COST-03: Remove cache entries whose keys are not in *current_audio_keys*.
+
+        This is useful after changing STT settings (model, num_speakers, etc.)
+        which alters cache keys, leaving the old entries orphaned.
+
+        If *current_audio_keys* is None the method is a no-op (returns 0).
+
+        Args:
+            current_audio_keys: Set of cache key hex strings that are still valid.
+
+        Returns:
+            Number of orphaned entries removed.
+        """
+        if not self._enabled or not self._cache_dir or current_audio_keys is None:
+            return 0
+
+        removed = 0
+        for path in list(self._cache_dir.glob("*.json")):
+            key = path.stem
+            if key not in current_audio_keys:
+                try:
+                    path.unlink(missing_ok=True)
+                    removed += 1
+                except OSError:
+                    pass
+        if removed:
+            logger.info(f"COST-03: Removed {removed} orphaned cache entries")
+        return removed
