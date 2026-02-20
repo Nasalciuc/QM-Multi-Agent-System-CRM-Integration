@@ -349,3 +349,63 @@ class TestTypedExceptionHandling:
 
             result = factory.chat_with_fallback("sys", "usr")
             assert "test-primary" in factory._disabled_providers
+
+
+# --- Tests: CRIT-02 — 402 Status Extraction from Response Object ---
+
+class TestHTTP402StatusExtraction:
+
+    def test_402_from_response_object_raises_quota_exhausted(self):
+        """CRIT-02: When status_code is on exc.response (not exc directly),
+        _classify_and_raise should still detect 402 and raise LLMQuotaExhaustedError."""
+        from core.openai_client import OpenAIClient
+
+        # Create mock exception where status_code is ONLY on .response
+        mock_exc = Exception("Error code: 402 - Payment Required")
+        mock_response = MagicMock()
+        mock_response.status_code = 402
+        mock_exc.response = mock_response
+        # Ensure direct status_code is not set
+        assert not hasattr(mock_exc, "status_code")
+
+        client = MagicMock(spec=OpenAIClient)
+        client._provider = "test-openrouter"
+        # Call the real method
+        with pytest.raises(LLMQuotaExhaustedError, match="Payment required"):
+            OpenAIClient._classify_and_raise(client, mock_exc)
+
+    def test_402_from_direct_status_code_raises_quota_exhausted(self):
+        """402 directly on exc.status_code should also raise LLMQuotaExhaustedError."""
+        from core.openai_client import OpenAIClient
+
+        mock_exc = Exception("requires more credits")
+        mock_exc.status_code = 402
+
+        client = MagicMock(spec=OpenAIClient)
+        client._provider = "test-openrouter"
+        with pytest.raises(LLMQuotaExhaustedError):
+            OpenAIClient._classify_and_raise(client, mock_exc)
+
+    def test_402_disables_provider_in_factory(self, models_config):
+        """CRIT-02: Full integration — 402 should disable provider AND skip on next call."""
+        with patch.dict(os.environ, {"TEST_PRIMARY_KEY": "k1", "TEST_FALLBACK_KEY": "k2"}):
+            factory = ModelFactory(config_path=models_config)
+            factory.providers[0].chat = MagicMock(
+                side_effect=LLMQuotaExhaustedError("[openrouter] Payment required / credits exhausted: 402")
+            )
+            fallback_resp = LLMResponse(
+                text="ok", input_tokens=10, output_tokens=5,
+                cost_usd=0.001, model="fallback-model",
+                provider="test-fallback", elapsed_seconds=0.5,
+            )
+            factory.providers[1].chat = MagicMock(return_value=fallback_resp)
+
+            result = factory.chat_with_fallback("sys", "usr")
+            assert result.provider == "test-fallback"
+            assert "test-primary" in factory._disabled_providers
+
+            # Second call should skip primary entirely
+            factory.providers[0].chat.reset_mock()
+            result2 = factory.chat_with_fallback("sys", "usr")
+            factory.providers[0].chat.assert_not_called()
+            assert result2.provider == "test-fallback"

@@ -18,6 +18,7 @@ from core.base_llm import (
     LLMQuotaExhaustedError, LLMRateLimitError,
     LLMInvalidConfigError, LLMServerError,
 )
+from structured_logger import emit_metric
 
 logger = logging.getLogger("qa_system.core")
 
@@ -104,6 +105,13 @@ class OpenAIClient(BaseLLM):
             f"in={input_tokens} out={output_tokens} cost=${cost:.4f} elapsed={elapsed:.1f}s"
         )
 
+        # HIGH-02: Structured metric for successful LLM call
+        emit_metric(
+            "llm_call", provider=self._provider, model=self._model,
+            input_tokens=input_tokens, output_tokens=output_tokens,
+            cost_usd=cost, elapsed_s=round(elapsed, 2), success=True,
+        )
+
         return LLMResponse(
             text=text,
             input_tokens=input_tokens,
@@ -158,6 +166,19 @@ class OpenAIClient(BaseLLM):
 
         # OpenAI SDK wraps HTTP errors in openai.APIStatusError subclasses
         status_code = getattr(exc, "status_code", None)
+
+        # CRIT-02: Fallback — extract status_code from the httpx Response object
+        # that the OpenAI SDK stores on some error types (e.g. APIStatusError).
+        if status_code is None:
+            response = getattr(exc, "response", None)
+            if response is not None:
+                status_code = getattr(response, "status_code", None)
+
+        # HIGH-02: Structured metric for LLM errors
+        emit_metric(
+            "llm_error", provider=self._provider,
+            error_type=type(exc).__name__, status_code=status_code,
+        )
 
         if status_code == 401 or "authentication" in msg or "invalid api key" in msg:
             raise LLMInvalidConfigError(
