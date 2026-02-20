@@ -22,6 +22,7 @@ import time
 import logging
 
 from utils import safe_log_filename
+from structured_logger import emit_metric
 
 logger = logging.getLogger("qa_system.pipeline")
 
@@ -391,6 +392,14 @@ class Pipeline:
         if len(scores) > 1:
             std_dev = (sum((s - avg_score) ** 2 for s in scores) / len(scores)) ** 0.5
             std_dev_line = f" | StdDev: {std_dev:.1f}"
+
+        # HIGH-02: Structured metric for pipeline completion
+        emit_metric(
+            "pipeline_complete",
+            evaluations=len(scores), avg_score=round(avg_score, 1),
+            llm_cost=round(llm_cost, 4), stt_cost=round(stt_cost, 4),
+            total_cost=round(combined_cost, 4),
+        )
 
         logger.info(
             f"PIPELINE SUMMARY | Evaluated: {len(scores)} | "

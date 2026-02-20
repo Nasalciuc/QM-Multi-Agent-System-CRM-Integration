@@ -21,6 +21,7 @@ from core.base_llm import (
     LLMInvalidConfigError, LLMServerError,
 )
 from core.openai_client import OpenAIClient
+from structured_logger import emit_metric
 
 logger = logging.getLogger("qa_system.core")
 
@@ -137,6 +138,11 @@ class ModelFactory:
                 self._disabled_providers.add(provider.provider_name)
                 logger.error(
                     f"Provider {provider.provider_name} disabled: {e}"
+                )
+                # HIGH-02: Structured metric for provider disabled
+                emit_metric(
+                    "provider_disabled",
+                    provider=provider.provider_name, reason=str(e),
                 )
                 errors.append((provider.provider_name, str(e)))
                 continue
