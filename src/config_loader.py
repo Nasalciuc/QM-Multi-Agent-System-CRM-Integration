@@ -39,7 +39,11 @@ def validate_env(required_keys: List[str]) -> None:
 
 
 def load_criteria(config_path: str = "config/qa_criteria.yaml") -> dict:
-    """Load QA criteria from YAML and flatten to {key: {description, category, weight, first_call_only}} format."""
+    """Load QA criteria from YAML and flatten to
+    {key: {description, category, weight, call_applicability}} format.
+
+    call_applicability values: "first_only", "second_only", "both"
+    """
     path = Path(config_path)
     if not path.exists():
         raise FileNotFoundError(f"Criteria file not found: {config_path}")
@@ -53,7 +57,7 @@ def load_criteria(config_path: str = "config/qa_criteria.yaml") -> dict:
                 "description": props["description"],
                 "category": category,
                 "weight": props.get("weight", 1.0),
-                "first_call_only": props.get("first_call_only", False),
+                "call_applicability": props.get("call_applicability", "both"),
             }
     return criteria
 

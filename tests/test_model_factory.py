@@ -310,3 +310,42 @@ class TestTypedExceptionHandling:
             assert result.provider == "test-fallback"
             # Provider should NOT be disabled (server error is transient)
             assert "test-primary" not in factory._disabled_providers
+    def test_402_payment_required_disables_provider(self, models_config):
+        """402 Payment Required should disable the provider like quota exhaustion."""
+        with patch.dict(os.environ, {"TEST_PRIMARY_KEY": "k1", "TEST_FALLBACK_KEY": "k2"}):
+            factory = ModelFactory(config_path=models_config)
+            factory.providers[0].chat = MagicMock(
+                side_effect=LLMQuotaExhaustedError("credits exhausted")
+            )
+            fallback_resp = LLMResponse(
+                text="ok", input_tokens=10, output_tokens=5,
+                cost_usd=0.001, model="fallback-model",
+                provider="test-fallback", elapsed_seconds=0.5,
+            )
+            factory.providers[1].chat = MagicMock(return_value=fallback_resp)
+
+            result = factory.chat_with_fallback("sys", "usr")
+            assert result.provider == "test-fallback"
+            assert "test-primary" in factory._disabled_providers
+
+            # Second call should skip primary entirely
+            factory.providers[0].chat.reset_mock()
+            result2 = factory.chat_with_fallback("sys", "usr")
+            factory.providers[0].chat.assert_not_called()
+
+    def test_invalid_model_id_disables_provider(self, models_config):
+        """'not a valid model ID' should be classified as InvalidConfig."""
+        with patch.dict(os.environ, {"TEST_PRIMARY_KEY": "k1", "TEST_FALLBACK_KEY": "k2"}):
+            factory = ModelFactory(config_path=models_config)
+            factory.providers[0].chat = MagicMock(
+                side_effect=LLMInvalidConfigError("not a valid model ID")
+            )
+            fallback_resp = LLMResponse(
+                text="ok", input_tokens=10, output_tokens=5,
+                cost_usd=0.001, model="fallback-model",
+                provider="test-fallback", elapsed_seconds=0.5,
+            )
+            factory.providers[1].chat = MagicMock(return_value=fallback_resp)
+
+            result = factory.chat_with_fallback("sys", "usr")
+            assert "test-primary" in factory._disabled_providers

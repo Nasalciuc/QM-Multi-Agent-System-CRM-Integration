@@ -13,6 +13,8 @@ Flow:
 from typing import List, Dict, Optional
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+import os
 import shutil
 import signal
 import threading
@@ -299,6 +301,20 @@ class Pipeline:
                     f"Cost budget warning: cumulative LLM cost ${self.total_cost:.4f} "
                     f"exceeds threshold ${self.cost_warning_threshold_usd:.2f}"
                 )
+                # Notify via webhook if configured
+                webhook_url = os.environ.get("WEBHOOK_URL", "").strip()
+                if webhook_url:
+                    try:
+                        import httpx
+                        httpx.post(webhook_url, json={
+                            "event": "cost_budget_warning",
+                            "total_cost_usd": round(self.total_cost, 4),
+                            "threshold_usd": self.cost_warning_threshold_usd,
+                            "evaluations_completed": len(evaluations),
+                            "timestamp": datetime.now().isoformat(),
+                        }, timeout=5.0)
+                    except Exception as e:
+                        logger.warning(f"Failed to send cost alert webhook: {e}")
 
             # HIGH-12: Track which providers were used
             provider = evaluation.get("provider_used", evaluation.get("model_used", "unknown"))

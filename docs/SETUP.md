@@ -94,7 +94,7 @@ criterion_key:
   description: "What the agent should do"
   category: "phone_skills"    # phone_skills | sales_techniques | urgency_closing | soft_skills
   weight: 1.0                 # Score weight (default 1.0)
-  first_call_only: false      # Skip for follow-up calls
+  call_applicability: both    # "first_only" | "second_only" | "both"
 ```
 
 ### Customizing LLM Models

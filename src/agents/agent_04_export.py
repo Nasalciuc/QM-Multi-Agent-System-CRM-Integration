@@ -73,19 +73,21 @@ class IntegrationAgent:
             cat_scores = score_data.get("category_scores", {})
             breakdown = score_data.get("score_breakdown", {})
 
-            summary_rows.append({
+            row = {
                 "File": e.get("filename", ""),
                 "Type": e.get("call_type", ""),
                 "Score": e.get("overall_score", 0),
-                "Phone": cat_scores.get("phone_skills", {}).get("score", 0),
-                "Sales": cat_scores.get("sales_techniques", {}).get("score", 0),
-                "Closing": cat_scores.get("urgency_closing", {}).get("score", 0),
-                "Soft": cat_scores.get("soft_skills", {}).get("score", 0),
-                "YES": breakdown.get("yes_count", 0),
-                "PARTIAL": breakdown.get("partial_count", 0),
-                "NO": breakdown.get("no_count", 0),
-                "Cost": e.get("cost_usd", 0)
-            })
+            }
+            # Dynamic category columns from criteria_ref
+            all_categories = sorted(set(c.get("category", "unknown") for c in criteria_ref.values()))
+            for cat in all_categories:
+                row[cat] = cat_scores.get(cat, {}).get("score", 0)
+            row["YES"] = breakdown.get("yes_count", 0)
+            row["PARTIAL"] = breakdown.get("partial_count", 0)
+            row["NO"] = breakdown.get("no_count", 0)
+            row["Cost"] = e.get("cost_usd", 0)
+
+            summary_rows.append(row)
 
         df_summary = pd.DataFrame(summary_rows)
 

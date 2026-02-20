@@ -19,7 +19,7 @@ primary:
 # Fallback chain — tried in order if primary fails
 fallbacks:
   - provider: "openrouter-claude"
-    model: "anthropic/claude-sonnet-4-20250514"
+    model: "anthropic/claude-sonnet-4-5-20250929"
     base_url: "https://openrouter.ai/api/v1"
     api_key_env: "OPENROUTER_API_KEY"
     temperature: 0.1

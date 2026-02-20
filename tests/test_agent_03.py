@@ -53,7 +53,7 @@ def agent(mock_model_factory, criteria_path, tmp_path):
 
 @pytest.fixture
 def all_yes_evaluation(agent):
-    """Evaluation dict with all 24 criteria scored YES."""
+    """Evaluation dict with all 48 criteria scored YES."""
     return {
         "criteria": {
             key: {"score": "YES", "evidence": "Agent did this well."}
@@ -64,7 +64,7 @@ def all_yes_evaluation(agent):
 
 @pytest.fixture
 def all_no_evaluation(agent):
-    """Evaluation dict with all 24 criteria scored NO."""
+    """Evaluation dict with all 48 criteria scored NO."""
     return {
         "criteria": {
             key: {"score": "NO", "evidence": "Not observed."}
@@ -91,33 +91,46 @@ def mixed_evaluation(agent):
 
 class TestCriteriaLoading:
 
-    def test_load_24_criteria(self, agent):
-        """All 24 criteria should be loaded from YAML."""
-        assert len(agent.EVALUATION_CRITERIA) == 24
+    def test_load_48_criteria(self, agent):
+        """All 48 criteria should be loaded from YAML."""
+        assert len(agent.EVALUATION_CRITERIA) == 48
 
     def test_criteria_have_required_fields(self, agent):
-        """Each criterion must have description, category, weight, first_call_only."""
+        """Each criterion must have description, category, weight, call_applicability."""
         for key, crit in agent.EVALUATION_CRITERIA.items():
             assert "description" in crit, f"Missing description for {key}"
             assert "category" in crit, f"Missing category for {key}"
             assert "weight" in crit, f"Missing weight for {key}"
-            assert "first_call_only" in crit, f"Missing first_call_only for {key}"
+            assert "call_applicability" in crit, f"Missing call_applicability for {key}"
+            assert crit["call_applicability"] in ("first_only", "second_only", "both"), \
+                f"Invalid call_applicability for {key}: {crit['call_applicability']}"
 
     def test_criteria_categories(self, agent):
-        """Should have exactly 4 categories."""
-        categories = set(c["category"] for c in agent.EVALUATION_CRITERIA.values())
-        assert categories == {"phone_skills", "sales_techniques", "urgency_closing", "soft_skills"}
+        """Should have the correct 10 categories."""
+        expected_categories = {
+            "opening", "interview", "psychological_framing", "first_call_closing",
+            "second_call_opening", "strategic_presentation", "creating_certainty",
+            "second_call_objection_handling", "commitment_closing", "communication",
+        }
+        actual = set(c["category"] for c in agent.EVALUATION_CRITERIA.values())
+        assert actual == expected_categories
 
     def test_criteria_category_counts(self, agent):
-        """Phone: 5, Sales: 8, Urgency: 3, Soft: 8."""
+        """Verify per-category counts."""
         counts = {}
         for crit in agent.EVALUATION_CRITERIA.values():
             cat = crit["category"]
             counts[cat] = counts.get(cat, 0) + 1
-        assert counts["phone_skills"] == 5
-        assert counts["sales_techniques"] == 8
-        assert counts["urgency_closing"] == 3
-        assert counts["soft_skills"] == 8
+        assert counts["opening"] == 5
+        assert counts["interview"] == 4
+        assert counts["psychological_framing"] == 4
+        assert counts["first_call_closing"] == 7
+        assert counts["second_call_opening"] == 4
+        assert counts["strategic_presentation"] == 5
+        assert counts["creating_certainty"] == 4
+        assert counts["second_call_objection_handling"] == 3
+        assert counts["commitment_closing"] == 4
+        assert counts["communication"] == 8
 
 
 # --- Tests: Call Type Detection ---
@@ -212,19 +225,24 @@ class TestScoreCalculation:
         }
         result = agent.calculate_score(evaluation)
         assert result["overall_score"] == 100.0
-        assert result["score_breakdown"]["na_count"] == 23
+        assert result["score_breakdown"]["na_count"] == 47
 
     def test_category_scores_present(self, agent, mixed_evaluation):
         result = agent.calculate_score(mixed_evaluation)
         assert "category_scores" in result
-        for cat in ["phone_skills", "sales_techniques", "urgency_closing", "soft_skills"]:
+        expected_categories = {
+            "opening", "interview", "psychological_framing", "first_call_closing",
+            "second_call_opening", "strategic_presentation", "creating_certainty",
+            "second_call_objection_handling", "commitment_closing", "communication",
+        }
+        for cat in expected_categories:
             assert cat in result["category_scores"]
 
-    def test_score_breakdown_sums_to_24(self, agent, mixed_evaluation):
+    def test_score_breakdown_sums_to_48(self, agent, mixed_evaluation):
         result = agent.calculate_score(mixed_evaluation)
         bd = result["score_breakdown"]
         total = bd["yes_count"] + bd["partial_count"] + bd["no_count"] + bd["na_count"]
-        assert total == 24
+        assert total == 48
 
     def test_empty_criteria_returns_zero(self, agent):
         result = agent.calculate_score({"criteria": {}})
@@ -233,6 +251,49 @@ class TestScoreCalculation:
     def test_missing_criteria_key_returns_zero(self, agent):
         result = agent.calculate_score({})
         assert result["overall_score"] == 0
+
+
+# --- Tests: Call Type Filtering ---
+
+class TestCallTypeFiltering:
+
+    def test_first_call_excludes_second_only(self, agent):
+        """First call should NOT include second_only criteria."""
+        first_call_criteria = {
+            k: v for k, v in agent.EVALUATION_CRITERIA.items()
+            if v["call_applicability"] in ("first_only", "both")
+        }
+        for crit in first_call_criteria.values():
+            assert crit["call_applicability"] != "second_only"
+
+    def test_second_call_excludes_first_only(self, agent):
+        """Second call should NOT include first_only criteria."""
+        second_call_criteria = {
+            k: v for k, v in agent.EVALUATION_CRITERIA.items()
+            if v["call_applicability"] in ("second_only", "both")
+        }
+        for crit in second_call_criteria.values():
+            assert crit["call_applicability"] != "first_only"
+
+    def test_both_calls_include_shared(self, agent):
+        """Both call types should include 'both' criteria."""
+        shared = [k for k, v in agent.EVALUATION_CRITERIA.items()
+                  if v["call_applicability"] == "both"]
+        assert len(shared) == 8  # 8 communication criteria
+
+    def test_first_call_criteria_count(self, agent):
+        """First call = first_only + both criteria."""
+        count = sum(1 for v in agent.EVALUATION_CRITERIA.values()
+                    if v["call_applicability"] in ("first_only", "both"))
+        # 5 opening + 4 interview + 4 psychological + 7 first_call_closing + 8 communication = 28
+        assert count == 28
+
+    def test_second_call_criteria_count(self, agent):
+        """Second call = second_only + both criteria."""
+        count = sum(1 for v in agent.EVALUATION_CRITERIA.values()
+                    if v["call_applicability"] in ("second_only", "both"))
+        # 4 opening + 5 presentation + 4 certainty + 3 objection + 4 closing + 8 communication = 28
+        assert count == 28
 
 
 # --- Tests: Listening Ratio ---

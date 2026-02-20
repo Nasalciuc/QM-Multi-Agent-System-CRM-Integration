@@ -207,7 +207,7 @@ N/A    = excluded from total
 overall_score = (total_points / total_weight) × 100
 ```
 
-Category scores are computed independently for: phone_skills, sales_techniques, urgency_closing, soft_skills.
+Category scores are computed independently for: opening, interview, psychological_framing, first_call_closing, second_call_opening, strategic_presentation, creating_certainty, second_call_objection_handling, commitment_closing, communication.
 
 ## Caching
 

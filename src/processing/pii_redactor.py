@@ -99,6 +99,13 @@ _ADDRESS_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# PNR / airline booking reference (6 uppercase alphanumeric, must contain at least 1 digit)
+# Common format: exactly 6 characters, mix of uppercase letters and digits
+# Requires at least one digit to avoid false positives on common words (LONDON, PLEASE, etc.)
+_PNR_PATTERN = re.compile(
+    r"\b(?=[A-Z0-9]*[0-9])[A-Z0-9]{6}\b"
+)
+
 # Replacement tokens
 _REPLACEMENTS = {
     "phone": "[PHONE]",
@@ -109,6 +116,7 @@ _REPLACEMENTS = {
     "dob": "[DOB]",
     "passport": "[PASSPORT]",
     "address": "[ADDRESS]",
+    "pnr": "[BOOKING_REF]",
 }
 
 
@@ -132,6 +140,7 @@ class PIIRedactor:
         redact_dob: bool = True,
         redact_passport: bool = True,
         redact_address: bool = True,
+        redact_pnr: bool = True,
     ):
         self.redact_phones = redact_phones
         self.redact_emails = redact_emails
@@ -141,6 +150,7 @@ class PIIRedactor:
         self.redact_dob = redact_dob
         self.redact_passport = redact_passport
         self.redact_address = redact_address
+        self.redact_pnr = redact_pnr
 
     def redact(self, text: str) -> Dict:
         """Redact all configured PII types from text.
@@ -158,7 +168,7 @@ class PIIRedactor:
             return {"text": "", "pii_found": {}, "total_redactions": 0}
 
         counts = {"phone": 0, "email": 0, "credit_card": 0, "ssn": 0,
-                  "spelled_pii": 0, "dob": 0, "passport": 0, "address": 0}
+                  "spelled_pii": 0, "dob": 0, "passport": 0, "address": 0, "pnr": 0}
 
         # Order matters: SSN before phone (SSN is more specific)
         if self.redact_ssn:
@@ -194,6 +204,11 @@ class PIIRedactor:
         if self.redact_address:
             text, n = _ADDRESS_PATTERN.subn(_REPLACEMENTS["address"], text)
             counts["address"] = n
+
+        # PNR / booking references (after address, before spelled_pii)
+        if self.redact_pnr:
+            text, n = _PNR_PATTERN.subn(_REPLACEMENTS["pnr"], text)
+            counts["pnr"] = n
 
         # CRIT-3: Spelled-out PII (common in call center recordings)
         if self.redact_spelled_pii:

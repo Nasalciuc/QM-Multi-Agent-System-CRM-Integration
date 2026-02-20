@@ -50,46 +50,46 @@ handlers:
 
 root:
   level: INFO
-  handlers: [console, file]
+  handlers: [console, file, json_file]
 
 loggers:
   qa_system:
     level: INFO
-    handlers: [console, file]
+    handlers: [console, file, json_file]
     propagate: false
 
   qa_system.core:
     level: DEBUG
-    handlers: [console, file]
+    handlers: [console, file, json_file]
     propagate: false
 
   qa_system.processing:
     level: INFO
-    handlers: [console, file]
+    handlers: [console, file, json_file]
     propagate: false
 
   qa_system.inference:
     level: DEBUG
-    handlers: [console, file]
+    handlers: [console, file, json_file]
     propagate: false
 
   qa_system.agents:
     level: INFO
-    handlers: [console, file]
+    handlers: [console, file, json_file]
     propagate: false
 
   # MED-15: Ensure STT cache and config loggers are included
   qa_system.stt_cache:
     level: INFO
-    handlers: [console, file]
+    handlers: [console, file, json_file]
     propagate: false
 
   qa_system.config:
     level: INFO
-    handlers: [console, file]
+    handlers: [console, file, json_file]
     propagate: false
 
   qa_system.pipeline:
     level: INFO
-    handlers: [console, file]
+    handlers: [console, file, json_file]
     propagate: false

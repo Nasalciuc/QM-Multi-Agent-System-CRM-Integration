@@ -164,6 +164,12 @@ class OpenAIClient(BaseLLM):
                 f"[{self._provider}] Authentication failed: {exc}"
             ) from exc
 
+        # 402 Payment Required — OpenRouter sends this when credits are exhausted
+        if status_code == 402 or "can only afford" in msg or "requires more credits" in msg:
+            raise LLMQuotaExhaustedError(
+                f"[{self._provider}] Payment required / credits exhausted: {exc}"
+            ) from exc
+
         if status_code == 429:
             # Distinguish quota exhaustion from rate limiting
             if "quota" in msg or "billing" in msg or "exceeded" in msg:
@@ -185,7 +191,7 @@ class OpenAIClient(BaseLLM):
                 f"[{self._provider}] Server error ({status_code}): {exc}"
             ) from exc
 
-        if "model" in msg and ("not found" in msg or "does not exist" in msg):
+        if "model" in msg and ("not found" in msg or "does not exist" in msg or "not a valid" in msg):
             raise LLMInvalidConfigError(
                 f"[{self._provider}] Model not found: {exc}"
             ) from exc

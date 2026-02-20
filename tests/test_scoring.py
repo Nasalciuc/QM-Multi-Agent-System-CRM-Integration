@@ -140,7 +140,7 @@ class TestScoreEdgeCases:
                 evaluation["criteria"][key] = {"score": "N/A", "evidence": "-"}
         result = agent.calculate_score(evaluation)
         # Only 10 criteria are scoreable; N/A excluded
-        assert result["score_breakdown"]["na_count"] == 14
+        assert result["score_breakdown"]["na_count"] == 38
         assert 0 < result["overall_score"] < 100
 
 
@@ -150,23 +150,23 @@ class TestScoreBreakdown:
         """Verify breakdown counts match actual input."""
         keys = list(agent.EVALUATION_CRITERIA.keys())
         evaluation = {"criteria": {}}
-        # 8 YES, 8 PARTIAL, 4 NO, 4 N/A = 24
+        # 16 YES, 16 PARTIAL, 8 NO, 8 N/A = 48
         for i, key in enumerate(keys):
-            if i < 8:
+            if i < 16:
                 evaluation["criteria"][key] = {"score": "YES", "evidence": "-"}
-            elif i < 16:
+            elif i < 32:
                 evaluation["criteria"][key] = {"score": "PARTIAL", "evidence": "-"}
-            elif i < 20:
+            elif i < 40:
                 evaluation["criteria"][key] = {"score": "NO", "evidence": "-"}
             else:
                 evaluation["criteria"][key] = {"score": "N/A", "evidence": "-"}
 
         result = agent.calculate_score(evaluation)
         bd = result["score_breakdown"]
-        assert bd["yes_count"] == 8
-        assert bd["partial_count"] == 8
-        assert bd["no_count"] == 4
-        assert bd["na_count"] == 4
+        assert bd["yes_count"] == 16
+        assert bd["partial_count"] == 16
+        assert bd["no_count"] == 8
+        assert bd["na_count"] == 8
 
     def test_total_points_and_weight(self, agent):
         """total_points / total_weight * 100 == overall_score."""
@@ -196,7 +196,12 @@ class TestCategoryScores:
             }
         }
         result = agent.calculate_score(evaluation)
-        for cat in ["phone_skills", "sales_techniques", "urgency_closing", "soft_skills"]:
+        expected = {
+            "opening", "interview", "psychological_framing", "first_call_closing",
+            "second_call_opening", "strategic_presentation", "creating_certainty",
+            "second_call_objection_handling", "commitment_closing", "communication",
+        }
+        for cat in expected:
             assert cat in result["category_scores"]
             assert result["category_scores"][cat]["score"] == 100.0
 
@@ -209,7 +214,13 @@ class TestCategoryScores:
             }
         }
         result = agent.calculate_score(evaluation)
-        assert result["category_scores"]["phone_skills"]["count"] == 5
-        assert result["category_scores"]["sales_techniques"]["count"] == 8
-        assert result["category_scores"]["urgency_closing"]["count"] == 3
-        assert result["category_scores"]["soft_skills"]["count"] == 8
+        assert result["category_scores"]["opening"]["count"] == 5
+        assert result["category_scores"]["interview"]["count"] == 4
+        assert result["category_scores"]["psychological_framing"]["count"] == 4
+        assert result["category_scores"]["first_call_closing"]["count"] == 7
+        assert result["category_scores"]["second_call_opening"]["count"] == 4
+        assert result["category_scores"]["strategic_presentation"]["count"] == 5
+        assert result["category_scores"]["creating_certainty"]["count"] == 4
+        assert result["category_scores"]["second_call_objection_handling"]["count"] == 3
+        assert result["category_scores"]["commitment_closing"]["count"] == 4
+        assert result["category_scores"]["communication"]["count"] == 8

@@ -1,133 +1,282 @@
 # =============================================================================
-# QA Evaluation Criteria - 24 Criteria in 4 Categories
+# QA Evaluation Criteria — Call-Type Aware
 # =============================================================================
-# Matches EVALUATION_CRITERIA from QualityManagementAgent class
-# Scoring: YES / PARTIAL / NO / N/A
+# call_applicability: "first_only" | "second_only" | "both"
+#
+# First Call:  criteria where call_applicability = "first_only" OR "both"
+# Second Call: criteria where call_applicability = "second_only" OR "both"
+#
+# Scoring: YES (100%) / PARTIAL (50%) / NO (0%) / N/A (excluded)
+# =============================================================================
 
-# --- PHONE SKILLS (5 criteria) ---
-phone_skills:
-  greeting_prepared:
-    description: "Was the agent prepared and timely greeted the client? Did the agent identify himself? Did the agent request the name of the client and use it? Did the agent thank the guest and ask how he could assist?"
+# =============================================================================
+# FIRST CALL ONLY (call_applicability: first_only) — 20 criteria
+# =============================================================================
+
+# --- The Opening — First 30 Seconds (5 criteria) ---
+opening:
+  enthusiastic_tone:
+    description: "Did the agent sound Enthusiastic & Confident to establish immediate authority? Did the agent's voice convey immediate energy and professionalism, avoiding a monotone or bored greeting? Did the agent request/confirm the name of the client and use it (if applicable)?"
     weight: 1.0
-    first_call_only: false
+    call_applicability: first_only
 
-  contact_info:
-    description: "Did the agent ask what will be the best way to reach the customer back? Did the agent spell back client's email and confirmed the phone number?"
+  permission_check:
+    description: "Did the agent ask \"Is it a good time to talk?\" or a similar permission-based opening question?"
     weight: 1.0
-    first_call_only: false
+    call_applicability: first_only
 
-  source_discovery:
-    description: "Did the agent ask how client found out about our website?"
+  advisor_positioning:
+    description: "Instead of a generic greeting, did the agent use the \"Senior Travel Expert\" or \"Dedicated Expert\" framing to give more value and create interest in our services?"
+    weight: 1.0
+    call_applicability: first_only
+
+  marketing_source:
+    description: "Did the agent ask how the client found out about our company?"
     weight: 0.5
-    first_call_only: true
+    call_applicability: first_only
 
-  first_time_customer:
-    description: "Did the agent ask if this is customer's first interaction with someone from our company?"
+  split_rule_compliance:
+    description: "Did the agent confirm if the client had contacted the company before? (Split rule compliance)"
     weight: 1.0
-    first_call_only: true
+    call_applicability: first_only
 
-  advertised_offer:
-    description: "Did the agent inform and clearly explain the details about our advertised offer from the website? (if applicable)"
+# --- The Interview (4 criteria) ---
+interview:
+  confirm_flight_details:
+    description: "Did the agent confirm flight details (Origin, Destination, Dates) with efficiency? Did the agent ask what they have already found online to gauge market awareness?"
+    weight: 1.0
+    call_applicability: first_only
+
+  dream_outcome_discovery:
+    description: "Did the agent ask about the occasion (Business, Anniversary, Family) to find the client's \"Dominant Buying Motive\" / dream outcome?"
+    weight: 1.2
+    call_applicability: first_only
+
+  flexibility_value_probing:
+    description: "Did the agent suggest shifting dates by 1-2 days or using nearby airports to \"open up significantly better fares\"? Did the agent ask about airline/other preferences?"
+    weight: 1.0
+    call_applicability: first_only
+
+  specific_needs_discovery:
+    description: "Did the agent probe for comfort/medical needs (e.g., lie-flat beds, bassinets, mobility requirements)?"
     weight: 0.8
-    first_call_only: false
+    call_applicability: first_only
 
-# --- SALES TECHNIQUES (8 criteria) ---
-sales_techniques:
-  flexibility_dates:
-    description: "Did the agent ask about flexibility (travel dates/airports/preferred departure/arrival times)?"
+# --- Psychological Framing & Objections (4 criteria) ---
+psychological_framing:
+  experience_vs_utility:
+    description: "Did the agent ask if the client values the \"experience\" (food/wine/service) or just the seat? (The \"Experience\" vs. \"Utility\" test)"
     weight: 1.0
-    first_call_only: false
+    call_applicability: first_only
 
-  airline_preferences:
-    description: "Did the agent ask about airline/other preferences? Development in case customer has preferences: reason (miles or experience)"
+  upsell_testing:
+    description: "Did the agent test the budget by offering a potential First Class upgrade for a specific price (e.g., \"$1k more\")?"
     weight: 1.0
-    first_call_only: false
+    call_applicability: first_only
 
-  product_presentation:
-    description: "Product presentation: Product features (value), Value first / price last"
-    weight: 1.5
-    first_call_only: false
+  pain_point_identification:
+    description: "Did the agent ask which airlines the client wants to avoid and why?"
+    weight: 0.8
+    call_applicability: first_only
 
   budget_inquiry:
-    description: "Did the agent ask about clients budget? (price expectations)"
+    description: "Did the agent ask about the client's budget / price expectations?"
     weight: 1.0
-    first_call_only: false
+    call_applicability: first_only
 
-  online_prices:
-    description: "Did the agent ask if customer checked online prices?"
-    weight: 0.8
-    first_call_only: false
-
-  fare_guarantee:
-    description: "Did the agent offer fare guarantee and the ability to beat the prices?"
+# --- End of First Call (7 criteria) ---
+first_call_closing:
+  recap_summary:
+    description: "Did the agent summarize the \"Why,\" \"The Plan,\" and \"The Priority\" back to the client?"
     weight: 1.0
-    first_call_only: false
+    call_applicability: first_only
 
-  objection_handling:
-    description: "Good objection handling (if applicable)"
+  contact_branding:
+    description: "Did the agent tell the client to save their number as \"Agent Name - Travel\" to increase the chance of a successful 2nd call?"
+    weight: 1.0
+    call_applicability: first_only
+
+  expert_delay:
+    description: "Did the agent explain that they need 60-90 minutes to access \"private, unpublished fares\" to justify the waiting time and avoid looking like they are just googling?"
+    weight: 1.0
+    call_applicability: first_only
+
+  urgency_scarcity:
+    description: "Did the agent mention that fares and availability change quickly to encourage a faster decision?"
     weight: 1.2
-    first_call_only: false
+    call_applicability: first_only
 
-  next_call_scheduling:
-    description: "Did the agent set a time for the next conversation with the client? Did the agent call at the agreed time?"
-    weight: 1.0
-    first_call_only: false
-
-# --- URGENCY & CLOSING (3 criteria) ---
-urgency_closing:
-  urgency_creation:
-    description: "Did the agent create the sense of urgency based on seat availability and advance purchase?"
+  hard_appointment:
+    description: "Did the agent take control by suggesting a specific time for the follow-up call (e.g., \"3 PM your time\")?"
     weight: 1.2
-    first_call_only: false
+    call_applicability: first_only
 
-  additional_assistance:
-    description: "Offers additional assistance before closing the interaction (Mr. Smith, now that I have your flight package confirmed, is there any other information I can provide you?)"
-    weight: 0.8
-    first_call_only: false
+  fare_guarantee_offer:
+    description: "Did the agent offer the best fare guarantee and the ability to beat any prices?"
+    weight: 1.0
+    call_applicability: first_only
 
-  thank_you_closing:
-    description: "Did the agent thank the caller for calling Buy Business Class?"
-    weight: 0.8
-    first_call_only: false
+  contact_info_confirm:
+    description: "Did the agent ask the best way to reach the customer back? Did the agent spell back the client's email and confirm the phone number?"
+    weight: 1.0
+    call_applicability: first_only
 
-# --- SOFT SKILLS (8 criteria) ---
-soft_skills:
-  straight_line_system:
-    description: "Did the agent use the straight line persuasion system? Having control over the call (every time the customer tries to take the conversation away from the sale by talking about something irrelevant you quickly bring it right back)"
+# =============================================================================
+# SECOND CALL ONLY (call_applicability: second_only) — 20 criteria
+# =============================================================================
+
+# --- First 60 Seconds of 2nd Call (4 criteria) ---
+second_call_opening:
+  punctuality:
+    description: "Did the agent call exactly at the confirmed time established in the first call?"
+    weight: 1.0
+    call_applicability: second_only
+
+  second_call_energy:
+    description: "Did the agent maintain an energetic, positive tone that conveys authority and sharpness?"
+    weight: 1.0
+    call_applicability: second_only
+
+  why_hook:
+    description: "Did the agent immediately link the presentation to the client's \"Dream Outcome\" (e.g., \"I found an option that ensures you arrive fully rested for your 9 AM meeting\")?"
+    weight: 1.2
+    call_applicability: second_only
+
+  narrative_control:
+    description: "Did the agent set an agenda for the call, guiding the customer through a logical comparison rather than just listing data?"
+    weight: 1.0
+    call_applicability: second_only
+
+# --- Strategic Presentation of Options (5 criteria) ---
+strategic_presentation:
+  anchor_option:
+    description: "Was the first option the most direct flight, used strategically as a price anchor (usually the most expensive) to test the client's reaction?"
+    weight: 1.2
+    call_applicability: second_only
+
+  advisor_recommendation:
+    description: "Did the agent \"strongly recommend\" a specific value-based option (e.g., better seat or significant savings) and explain why? (The Advisor's Recommendation)"
     weight: 1.5
-    first_call_only: false
+    call_applicability: second_only
+
+  value_builder_option:
+    description: "Was a \"cheapest possible\" option offered specifically to increase the perceived value of the first two?"
+    weight: 1.0
+    call_applicability: second_only
+
+  value_before_price:
+    description: "Did the agent highlight the benefits (lie-flat seat, lounge access, specific aircraft type) before revealing the price?"
+    weight: 1.2
+    call_applicability: second_only
+
+  continuous_feedback:
+    description: "Did the agent pause after each option to ask targeted questions and check the client's reaction?"
+    weight: 1.0
+    call_applicability: second_only
+
+# --- Creating Certainty (4 criteria) ---
+creating_certainty:
+  product_certainty:
+    description: "Did the agent build certainty that the flight, airline, and itinerary are a perfect fit for the client's needs?"
+    weight: 1.2
+    call_applicability: second_only
+
+  agent_authority:
+    description: "Did the agent demonstrate expertise and authority (e.g., \"I've personally flown this route\")?"
+    weight: 1.0
+    call_applicability: second_only
+
+  company_trust:
+    description: "Did the agent mention IATA accreditation or company reliability to build trust in the brand?"
+    weight: 1.0
+    call_applicability: second_only
+
+  pre_handle_objections:
+    description: "Did the agent address potential downsides (e.g., a longer layover) proactively by framing them as a benefit (e.g., \"access to a highly-rated lounge\")?"
+    weight: 1.2
+    call_applicability: second_only
+
+# --- Objection Handling — 2nd Call (3 criteria) ---
+second_call_objection_handling:
+  cushion_and_listen:
+    description: "When an objection occurred, did the agent validate the concern (e.g., \"I hear what you're saying...\") without getting defensive?"
+    weight: 1.2
+    call_applicability: second_only
+
+  isolate_product:
+    description: "Did the agent ask \"Setting price aside, is this the right flight for you?\" to confirm if the issue is financial or trust-related?"
+    weight: 1.0
+    call_applicability: second_only
+
+  effective_reframing:
+    description: "When faced with a \"too expensive\" objection, did the agent re-frame the cost against the \"Dream Outcome\" (e.g., the value of comfort vs. a cheaper, uncomfortable flight)?"
+    weight: 1.2
+    call_applicability: second_only
+
+# --- Commitment & Closing — 2nd Call (4 criteria) ---
+commitment_closing:
+  trial_close:
+    description: "Did the agent ask a low-pressure evaluative question, such as \"Does the $1,200 savings sound like the best way to go?\""
+    weight: 1.2
+    call_applicability: second_only
+
+  alternative_choice:
+    description: "Did the agent offer a choice to prompt a decision, such as \"Which credit card would you like to use today?\""
+    weight: 1.0
+    call_applicability: second_only
+
+  direct_guidance:
+    description: "Did the agent offer to stay on the line to guide the client through the secure payment link?"
+    weight: 1.0
+    call_applicability: second_only
+
+  closing_urgency_scarcity:
+    description: "Did the agent remind the client that fares and availability for the best seats change quickly to encourage a timely decision?"
+    weight: 1.2
+    call_applicability: second_only
+
+# =============================================================================
+# SHARED — Both Calls (call_applicability: both) — 8 criteria
+# =============================================================================
+
+# --- Communication (8 criteria) ---
+communication:
+  active_listening:
+    description: "Did the agent listen more than they spoke, letting the customer do most of the talking? Did the agent match the client's pace and communication style?"
+    weight: 1.2
+    call_applicability: both
 
   consultative_expertise:
     description: "Did the agent sound consultative and display expertise?"
     weight: 1.5
-    first_call_only: false
+    call_applicability: both
 
   positive_tone:
-    description: "Upbeat & Positive Tone, uses appropriate vocal inflection / Positive Verbiage using a variety of 'Power Words'"
+    description: "Upbeat & Positive Tone, uses appropriate vocal inflection / Positive Verbiage"
     weight: 1.0
-    first_call_only: false
+    call_applicability: both
 
   authenticity:
-    description: "Responds to guest questions and conversation with /Authenticity/Appropriateness"
+    description: "Responds to guest questions and conversation with Authenticity/Appropriateness"
     weight: 1.0
-    first_call_only: false
+    call_applicability: both
 
   pace_matching:
-    description: "Pace is appropriate and easy to understand, and matches the guest pace (agent is receptive to guests pace)"
+    description: "Pace is appropriate and easy to understand, and matches the guest pace (agent is receptive to guest's pace)"
     weight: 0.8
-    first_call_only: false
+    call_applicability: both
 
   answers_questions:
-    description: "Answers questions/or offers to locate unknown information"
+    description: "Answers questions or offers to locate unknown information"
     weight: 1.0
-    first_call_only: false
+    call_applicability: both
 
   call_leadership:
-    description: "Leads the guest through the call, makes the transaction easy for the guest Talking vs Listening percentage"
+    description: "Does the agent lead the guest through the call and make the transaction easy for them?"
     weight: 1.2
-    first_call_only: false
+    call_applicability: both
 
   accurate_information:
-    description: "Provides accurate information"
+    description: "Provides accurate information. Did the agent inform and clearly explain the details about our advertised offer from the website (if applicable)?"
     weight: 1.5
-    first_call_only: false
+    call_applicability: both

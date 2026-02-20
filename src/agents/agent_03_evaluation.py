@@ -195,14 +195,17 @@ class QualityManagementAgent:
         processed_transcript = chunk_result["text"]
         truncated = chunk_result["truncated"]
 
-        # 4. Filter criteria: skip first_call_only for follow-ups
+        # 4. Filter criteria by call_applicability
         applicable_criteria = {}
         skipped_criteria = []  # MED-NEW-14: Track skipped criteria
-        for key, criteria in self.EVALUATION_CRITERIA.items():
-            if is_followup and criteria["first_call_only"]:
+        # NEW — call_applicability filtering
+        target = "second_only" if is_followup else "first_only"
+        for key, crit in self.EVALUATION_CRITERIA.items():
+            applicability = crit.get("call_applicability", "both")
+            if applicability == "both" or applicability == target:
+                applicable_criteria[key] = crit
+            else:
                 skipped_criteria.append(key)
-                continue
-            applicable_criteria[key] = criteria
 
         if skipped_criteria:
             logger.info(

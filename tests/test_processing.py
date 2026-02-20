@@ -314,6 +314,20 @@ class TestPIIRedactor:
         assert "[ADDRESS]" in result["text"]
         assert "456 Oak Avenue" not in result["text"]
 
+    def test_redact_pnr(self):
+        """Booking reference / PNR should be redacted."""
+        redactor = PIIRedactor()
+        result = redactor.redact("Your booking reference is AB3C4D.")
+        assert "[BOOKING_REF]" in result["text"]
+        assert "AB3C4D" not in result["text"]
+        assert result["pii_found"]["pnr"] >= 1
+
+    def test_pnr_no_false_positive_on_words(self):
+        """Pure letter words should NOT be redacted as PNR."""
+        redactor = PIIRedactor()
+        result = redactor.redact("LONDON is a great city.")
+        assert "LONDON" in result["text"]  # NOT redacted
+
 
 # ═══════════════════════════════════════════════════════════════════
 # safe_log_filename (Fix #1)
