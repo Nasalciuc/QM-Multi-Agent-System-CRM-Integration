@@ -349,6 +349,40 @@ class TestListeningRatio:
         assert result["total_words"] == 0
 
 
+# --- Tests: CRIT-03 — Transcript Minimum Length Validation ---
+
+class TestTranscriptValidation:
+
+    def test_evaluate_call_rejects_short_transcript(self, agent):
+        """CRIT-03: Transcript with < 50 words should be rejected."""
+        short_transcript = "Hello this is a very short call with only ten words."
+        result = agent.evaluate_call(short_transcript, "short_call.mp3")
+        assert result.get("error_code") == "TRANSCRIPT_TOO_SHORT"
+        assert result.get("cost_usd") == 0.0
+        assert result.get("status") == "TOO_SHORT"
+
+    def test_evaluate_call_rejects_empty_transcript(self, agent):
+        """CRIT-03: Empty string should be rejected."""
+        result = agent.evaluate_call("", "empty_call.mp3")
+        assert result.get("error_code") == "TRANSCRIPT_TOO_SHORT"
+        assert result.get("cost_usd") == 0.0
+        assert result.get("status") == "TOO_SHORT"
+        assert result.get("word_count") == 0
+
+    def test_evaluate_call_rejects_whitespace_only(self, agent):
+        """CRIT-03: Whitespace-only transcript should be rejected."""
+        result = agent.evaluate_call("   \n\n   \t  ", "blank_call.mp3")
+        assert result.get("error_code") == "TRANSCRIPT_TOO_SHORT"
+        assert result.get("cost_usd") == 0.0
+
+    def test_evaluate_call_rejects_short_chars(self, agent):
+        """CRIT-03: Transcript with enough words but < 200 chars."""
+        # 50 single-char "words" = 99 chars (under 200)
+        short_chars = " ".join(["a"] * 50)
+        result = agent.evaluate_call(short_chars, "short_chars.mp3")
+        assert result.get("error_code") == "TRANSCRIPT_TOO_SHORT"
+
+
 # --- Tests: MED-11 — evaluate_call with direction metadata ---
 
 class TestEvaluateCallDirection:
@@ -391,8 +425,8 @@ class TestEvaluateCallDirection:
             "cost_usd": 0.0, "eval_time_seconds": 0.1,
         })
 
-        # A long enough transcript
-        transcript = "Speaker 0: " + " ".join(["hello"] * 30) + "\nSpeaker 1: hi there"
+        # A long enough transcript (>=50 words, >=200 chars for CRIT-03)
+        transcript = "Speaker 0: " + " ".join(["hello"] * 60) + "\nSpeaker 1: hi there how are you doing today"
         result = agent.evaluate_call(transcript, "call1.mp3")
         assert "error" not in result
 
@@ -421,7 +455,7 @@ class TestCleanerCache:
             "cost_usd": 0.0, "eval_time_seconds": 0.1,
         })
 
-        transcript = "Speaker 0: " + " ".join(["hello"] * 30) + "\nSpeaker 1: hi there"
+        transcript = "Speaker 0: " + " ".join(["hello"] * 60) + "\nSpeaker 1: hi there how are you doing today"
         agent.evaluate_call(transcript, "call1.mp3", metadata={"direction": "inbound"})
         agent.evaluate_call(transcript, "call2.mp3", metadata={"direction": "outbound"})
 

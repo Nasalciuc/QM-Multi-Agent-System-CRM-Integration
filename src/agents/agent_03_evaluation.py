@@ -24,8 +24,13 @@ from processing.token_counter import TokenCounter
 from processing.chunker import TranscriptChunker
 from processing.pii_redactor import PIIRedactor
 from inference.inference_engine import InferenceEngine
+from error_codes import ErrorCode
 
 logger = logging.getLogger("qa_system.agents")
+
+# CRIT-03: Minimum transcript requirements to avoid wasting LLM tokens
+MIN_TRANSCRIPT_WORDS = 50        # Skip if fewer than 50 words
+MIN_TRANSCRIPT_CHARS = 200       # Skip if fewer than 200 characters
 
 
 class QualityManagementAgent:
@@ -151,21 +156,28 @@ class QualityManagementAgent:
 
         Returns evaluation dict with criteria scores, evidence, assessment.
         """
-        # CRIT-5: Reject transcripts too short for meaningful evaluation
-        word_count = len(transcript.split()) if transcript else 0
-        if word_count < self.MIN_TRANSCRIPT_WORDS:
+        # CRIT-03: Validate transcript minimum length before expensive LLM call
+        transcript_stripped = transcript.strip() if transcript else ""
+        word_count = len(transcript_stripped.split()) if transcript_stripped else 0
+        char_count = len(transcript_stripped)
+        if (not transcript_stripped
+                or word_count < MIN_TRANSCRIPT_WORDS
+                or char_count < MIN_TRANSCRIPT_CHARS):
             logger.warning(
-                f"Transcript too short for {safe_log_filename(filename)}: {word_count} words "
-                f"(min {self.MIN_TRANSCRIPT_WORDS}). Skipping LLM call."
+                f"Transcript too short for evaluation: {word_count} words, "
+                f"{char_count} chars (min: {MIN_TRANSCRIPT_WORDS} words / "
+                f"{MIN_TRANSCRIPT_CHARS} chars). File: {safe_log_filename(filename)}"
             )
             _, call_type = self.detect_call_type(filename, metadata)
             return {
                 "error": f"Transcript too short ({word_count} words)",
+                "error_code": ErrorCode.TRANSCRIPT_TOO_SHORT,
                 "status": "TOO_SHORT",
                 "call_type": call_type,
                 "word_count": word_count,
+                "cost_usd": 0.0,
                 "criteria": {},
-                "overall_assessment": f"Transcript too short for evaluation ({word_count} words, minimum {self.MIN_TRANSCRIPT_WORDS})",
+                "overall_assessment": f"Transcript too short for evaluation ({word_count} words, minimum {MIN_TRANSCRIPT_WORDS})",
                 "strengths": [],
                 "improvements": [],
                 "critical_gaps": [],
