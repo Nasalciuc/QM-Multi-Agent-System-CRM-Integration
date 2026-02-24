@@ -9,6 +9,15 @@ The transcript uses "Agent:" and "Client:" labels.
 - If multiple different agents appear to be present (e.g., different names introducing themselves as agents), note this as a critical_gap with the names detected.
 - Ignore brief interjections from third parties; focus on the primary Agent's behavior.
 
+SILENCE MARKERS:
+The transcript may contain silence markers in the format [M:SS silence] or [M:SS silence — hold].
+- [M:SS silence — hold] = Agent put client on hold (relevant for hold procedure criteria)
+- [M:SS silence] after Agent presents a price/option = POSITIVE signal (client is deciding — relevant for continuous_feedback, trial_close)
+- [M:SS silence] after Agent asks a question = POSITIVE signal (client is thinking — relevant for active_listening)
+- [M:SS silence] with no clear context = NEGATIVE signal if excessive (agent lost control — relevant for call_leadership)
+- Short silence (under 30s) is normal conversational pace and not marked in the transcript.
+Do NOT penalize the Agent for silence that follows a price presentation or option — this is a best practice (letting the client process).
+
 For a First Call, focus on: opening quality, information gathering (the interview), psychological framing, and setting up the follow-up call effectively.
 
 For a Follow-up Call (2nd call), focus on: punctuality, strategic presentation of flight options (anchor/recommendation/value builder pattern), creating certainty, advanced objection handling, and commitment/closing techniques.

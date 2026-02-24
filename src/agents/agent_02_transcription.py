@@ -12,6 +12,7 @@ Persists transcripts to data/transcripts/ after successful transcription.
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from pathlib import Path
 from typing import Dict, List, Optional
+import re
 import time
 import logging
 
@@ -52,12 +53,32 @@ _MAX_AUDIO_FILE_BYTES = _MAX_AUDIO_FILE_MB * 1024 * 1024
 # COST-02: Minimum audio duration to justify an API call
 _DEFAULT_MIN_AUDIO_DURATION_SEC = 5
 
-# COST-01: Audio pre-processing constants
+# COST-01: Audio pre-processing constants (SILENCE-FIX: internal compression removed)
 _TARGET_SAMPLE_RATE = 16_000       # 16 kHz mono — Scribe v2 internal rate
 _SILENCE_THRESHOLD_DB = -40        # dBFS below which audio is considered silence
-_MIN_SILENCE_DURATION_MS = 2000    # internal silence gaps longer than this get compressed
-_COMPRESSED_SILENCE_MS = 1000      # replace long gaps with 1 s of silence
 _SAVINGS_THRESHOLD_PCT = 5         # only use preprocessed file if savings > 5 %
+
+# SILENCE-FIX: Hold-language regex for REAL-12 silence markers.
+# Matches common hold/wait phrases so silence markers can be annotated
+# as [M:SS silence — hold] when preceded by agent hold language.
+# NOTE: At this point in the pipeline speaker labels are still "Speaker N:"
+# (Agent/Client rename happens later in TranscriptCleaner), so we match on
+# ANY speaker’s line.  This is acceptable because hold language ("let me check",
+# "bear with me") is almost exclusively said by agents.
+_HOLD_LANGUAGE_RE = re.compile(
+    r'\b(?:'
+    r'hold|on hold|'
+    r'one moment|just a moment|give me a moment|'
+    r'bear with me|'
+    r'let me (?:check|look|see|find|pull up|search|verify)|'
+    r'(?:give|need) (?:me )?(?:a )?(?:sec(?:ond)?|minute|moment)|'
+    r'hang (?:on|tight)|'
+    r'two seconds?|one second?|'
+    r'un moment(?:o)?|'
+    r"I'?ll be right back"
+    r')\b',
+    re.IGNORECASE,
+)
 
 
 class ElevenLabsSTTAgent:
@@ -109,7 +130,7 @@ class ElevenLabsSTTAgent:
             enable_stt_cache: Enable/disable STT transcript caching.
             stt_cache_ttl_days: Days to keep cached transcripts before expiry.
             min_audio_duration_sec: Skip transcription for audio shorter than this (COST-02).
-            preprocess_audio: Trim silence, downsample to 16 kHz mono, compress long gaps (COST-01).
+            preprocess_audio: Edge-trim silence, downsample to 16 kHz mono (COST-01 — internal compression removed).
         """
         self.client = client
         self.persist_transcripts = persist_transcripts
@@ -132,6 +153,16 @@ class ElevenLabsSTTAgent:
             enable=enable_stt_cache and stt_cache_dir is not None,
             ttl_seconds=stt_cache_ttl_days * 24 * 3600,
         )
+
+        # SILENCE-FIX: One-time cache invalidation after removing COST-01 compression.
+        # Old cached transcripts were generated from compressed audio and have
+        # corrupted timestamps.  Wipe them on first run after this change.
+        _cache_migration_marker = Path(stt_cache_dir or "data/stt_cache") / ".silence_fix_v1"
+        if self._stt_cache.enabled and not _cache_migration_marker.exists():
+            cleared = self._stt_cache.clear()
+            logger.info(f"SILENCE-FIX: Cleared {cleared} cached transcripts (COST-01 compression removed)")
+            _cache_migration_marker.parent.mkdir(parents=True, exist_ok=True)
+            _cache_migration_marker.write_text("Compression removed, cache invalidated")
 
         if self.persist_transcripts:
             self.transcripts_folder.mkdir(parents=True, exist_ok=True)
@@ -240,11 +271,13 @@ class ElevenLabsSTTAgent:
 
                     # Build diarized transcript from word-level speaker tags
                     if self.diarize and words:
-                        diarized_text, speakers, speakers_merged = self._build_diarized_transcript(words)
+                        diarized_text, speakers, speakers_merged, parsed_words = self._build_diarized_transcript(words)
+                        silence_stats = self._analyze_silence(parsed_words)
                     else:
                         diarized_text = raw_text
                         speakers = set()
                         speakers_merged = False
+                        silence_stats = None
 
                     result_dict = {
                         "text": diarized_text,
@@ -254,6 +287,8 @@ class ElevenLabsSTTAgent:
                         "diarized": bool(self.diarize and words),
                         "speakers_merged": speakers_merged,
                     }
+                    if silence_stats is not None:
+                        result_dict["silence_stats"] = silence_stats
                     if preprocess_stats:
                         result_dict["preprocess"] = preprocess_stats
                     return result_dict
@@ -340,10 +375,10 @@ class ElevenLabsSTTAgent:
         speaker_ids from the API.
 
         Returns:
-            (diarized_text, speakers_set, speakers_merged)
+            (diarized_text, speakers_set, speakers_merged, parsed_words)
         """
         if not words:
-            return "", set(), False
+            return "", set(), False, []
 
         # First pass: extract all words with speaker info
         parsed_words = []
@@ -426,7 +461,13 @@ class ElevenLabsSTTAgent:
                     label = _speaker_label(current_speaker)
                     lines.append(f"{label}: {''.join(current_line_words).strip()}")
                     current_line_words = []
-                lines.append(f"[{minutes}:{seconds:02d} silence]")
+                # SILENCE-FIX: Annotate marker with — hold when preceding
+                # line contains hold language (e.g. "let me check", "bear with me")
+                marker = f"[{minutes}:{seconds:02d} silence"
+                if lines and _HOLD_LANGUAGE_RE.search(lines[-1]):
+                    marker += " \u2014 hold"
+                marker += "]"
+                lines.append(marker)
 
             # Track last word timestamp
             if start is not None and wtype == "word":
@@ -450,7 +491,51 @@ class ElevenLabsSTTAgent:
             label = _speaker_label(current_speaker)
             lines.append(f"{label}: {''.join(current_line_words).strip()}")
 
-        return "\n".join(lines), effective_speakers, speakers_merged
+        return "\n".join(lines), effective_speakers, speakers_merged, parsed_words
+
+    @staticmethod
+    def _analyze_silence(parsed_words: list) -> dict:
+        """Compute silence statistics from word-level timestamps.
+
+        Extracted from ElevenLabs word timestamps — zero additional API cost.
+        Results go into evaluation metadata for reporting/monitoring.
+
+        Args:
+            parsed_words: List of (text, speaker_id, wtype, start_time) tuples
+                         as built by _build_diarized_transcript first pass.
+
+        Returns:
+            Dict with silence_pct, longest_gap_ms, num_gaps_over_30s,
+            total_silence_ms, gap_locations[].
+        """
+        gaps: list = []
+        last_word_time: float | None = None
+        total_speech_end = 0.0
+
+        for text, speaker, wtype, start in parsed_words:
+            if start is not None and wtype == "word":
+                if last_word_time is not None:
+                    gap_ms = (start - last_word_time) * 1000
+                    if gap_ms > 1000:  # Only count gaps > 1s as meaningful silence
+                        gaps.append({
+                            "start_s": round(last_word_time, 1),
+                            "end_s": round(start, 1),
+                            "duration_ms": round(gap_ms),
+                        })
+                last_word_time = start
+                total_speech_end = start
+
+        total_duration_ms = total_speech_end * 1000 if total_speech_end > 0 else 0
+        total_silence_ms = sum(g["duration_ms"] for g in gaps)
+
+        return {
+            "silence_pct": round(total_silence_ms / max(1, total_duration_ms) * 100, 1),
+            "longest_gap_ms": max((g["duration_ms"] for g in gaps), default=0),
+            "num_gaps_over_30s": sum(1 for g in gaps if g["duration_ms"] >= 30000),
+            "total_silence_ms": round(total_silence_ms),
+            "num_gaps": len(gaps),
+            "gap_locations": gaps[:20],  # Cap at 20 to avoid bloating metadata
+        }
 
     def _save_transcript(self, filename: str, transcript: str) -> Optional[Path]:
         """Save transcript to disk as .txt file."""
@@ -574,6 +659,9 @@ class ElevenLabsSTTAgent:
                     "cached": False,
                     "transcript_path": str(saved_path) if saved_path else None,
                 }
+                # SILENCE-FIX: Propagate silence stats for downstream evaluation
+                if "silence_stats" in result:
+                    transcripts[filename]["silence_stats"] = result["silence_stats"]
                 logger.info(f"  OK: {safe_log_filename(filename)} ({duration or 0:.1f} min, {elapsed:.1f}s)")
 
                 # CRIT-NEW-2: Rate-limit between consecutive API calls
@@ -622,8 +710,11 @@ class ElevenLabsSTTAgent:
 
         Steps:
             1. Convert to mono, downsample to 16 kHz (Scribe v2 internal rate).
-            2. Trim leading/trailing silence.
-            3. Compress long internal silence gaps (>2 s → 1 s).
+            2. Edge-trim leading/trailing silence (500 ms padding).
+
+        SILENCE-FIX: Internal silence compression was removed because it
+        destroyed timestamps that REAL-12 silence markers and 14 QA criteria
+        depend on.  Only edge-trim + downsample remain.
 
         Only writes a temp file if the savings exceed _SAVINGS_THRESHOLD_PCT.
 
@@ -643,7 +734,7 @@ class ElevenLabsSTTAgent:
         if audio.frame_rate != _TARGET_SAMPLE_RATE:
             audio = audio.set_frame_rate(_TARGET_SAMPLE_RATE)
 
-        # 2. Trim leading/trailing silence
+        # 2. Edge-trim leading/trailing silence (SILENCE-FIX: padding 200→500 ms)
         nonsilent_ranges = detect_nonsilent(
             audio,
             min_silence_len=500,
@@ -658,30 +749,9 @@ class ElevenLabsSTTAgent:
                 "action": "all_silence",
             }
 
-        start_trim = max(0, nonsilent_ranges[0][0] - 200)  # 200 ms padding
-        end_trim = min(len(audio), nonsilent_ranges[-1][1] + 200)
+        start_trim = max(0, nonsilent_ranges[0][0] - 500)  # 500 ms padding
+        end_trim = min(len(audio), nonsilent_ranges[-1][1] + 500)
         audio = audio[start_trim:end_trim]
-
-        # 3. Compress long internal silence gaps
-        nonsilent_ranges = detect_nonsilent(
-            audio,
-            min_silence_len=_MIN_SILENCE_DURATION_MS,
-            silence_thresh=_SILENCE_THRESHOLD_DB,
-        )
-        if len(nonsilent_ranges) > 1:
-            filler = AudioSegment.silent(
-                duration=_COMPRESSED_SILENCE_MS,
-                frame_rate=_TARGET_SAMPLE_RATE,
-            )
-            chunks = []
-            for idx, (seg_start, seg_end) in enumerate(nonsilent_ranges):
-                chunks.append(audio[seg_start:seg_end])
-                if idx < len(nonsilent_ranges) - 1:
-                    chunks.append(filler)
-            combined = chunks[0]
-            for chunk in chunks[1:]:
-                combined = combined + chunk
-            audio = combined
 
         processed_ms = len(audio)
         savings_pct = round((1 - processed_ms / max(1, original_ms)) * 100, 1)

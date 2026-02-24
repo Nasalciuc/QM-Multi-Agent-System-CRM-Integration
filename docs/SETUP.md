@@ -80,7 +80,7 @@ WEBHOOK_URL=
 | File | Purpose |
 |------|---------|
 | `config/agents.yaml` | Pipeline settings, ElevenLabs config |
-| `config/qa_criteria.yaml` | 24 evaluation criteria definitions |
+| `config/qa_criteria.yaml` | 48 evaluation criteria definitions |
 | `config/models.yaml` | LLM model definitions, pricing, fallback chain |
 | `config/logging.yaml` | Logging configuration (handlers, levels) |
 

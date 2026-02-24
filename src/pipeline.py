@@ -358,6 +358,9 @@ class Pipeline:
                 "cost_usd": cost,
                 "status": "Success" if "error" not in evaluation else evaluation["error"]
             })
+            # SILENCE-FIX: Propagate silence stats from Agent 02 to evaluation
+            if "silence_stats" in data:
+                evaluations[-1]["silence_stats"] = data["silence_stats"]
 
         logger.info(f"STEP 3 complete: {len(evaluations)} evaluations")
 

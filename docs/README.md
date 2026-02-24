@@ -1,6 +1,6 @@
 # QM Multi Agent System — Call Center Quality Assurance
 
-Automated 4-agent pipeline for evaluating call center recordings against 24 quality criteria.
+Automated 4-agent pipeline for evaluating call center recordings against 48 quality criteria.
 
 ## Overview
 
@@ -8,7 +8,7 @@ Automated 4-agent pipeline for evaluating call center recordings against 24 qual
 |-------|---------|------------|
 | **Agent 1** — Audio | Download / find call recordings | CRM API or local files |
 | **Agent 2** — Transcription | Speech-to-text with diarization | ElevenLabs Scribe v2 |
-| **Agent 3** — Evaluation | Score transcript against 24 QA criteria | OpenRouter / OpenAI GPT-4o |
+| **Agent 3** — Evaluation | Score transcript against 48 QA criteria | OpenRouter / OpenAI GPT-4o |
 | **Agent 4** — Export | Generate Excel, CSV, JSON reports | pandas + openpyxl |
 
 ## Quick Start
@@ -53,7 +53,7 @@ python src/main.py --date-from 2026-02-01 --date-to 2026-02-10 --agent-id 120
 ┌─────────────┐    ┌─────────────────┐    ┌───────────────┐    ┌──────────┐
 │  Agent 1    │───▶│    Agent 2      │───▶│   Agent 3     │───▶│ Agent 4  │
 │  Audio      │    │  Transcription  │    │  Evaluation   │    │ Export   │
-│  Retrieval  │    │  (ElevenLabs)   │    │  (LLM + 24   │    │ Excel/   │
+│  Retrieval  │    │  (ElevenLabs)   │    │  (LLM + 48   │    │ Excel/   │
 │             │    │                 │    │   criteria)   │    │ CSV/JSON │
 └─────────────┘    └─────────────────┘    └───────────────┘    └──────────┘
 ```
@@ -69,7 +69,7 @@ python src/main.py --date-from 2026-02-01 --date-to 2026-02-10 --agent-id 120
 | `ANTHROPIC_API_KEY` | No | Claude fallback via OpenRouter |
 | `WEBHOOK_URL` | No | Webhook for result notifications |
 
-## Evaluation Criteria (24 total)
+## Evaluation Criteria (48 total)
 
 Grouped into 4 categories:
 

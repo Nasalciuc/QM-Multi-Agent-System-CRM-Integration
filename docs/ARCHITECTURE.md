@@ -28,7 +28,7 @@ The QM Multi Agent System is a 4-agent pipeline that processes call center recor
 ```
 ├── config/                     # Configuration files
 │   ├── agents.yaml             # Pipeline & agent settings
-│   ├── qa_criteria.yaml        # 24 evaluation criteria
+│   ├── qa_criteria.yaml        # 48 evaluation criteria
 │   ├── models.yaml             # LLM model definitions & fallback chain
 │   └── logging.yaml            # Logging config (dictConfig format)
 │
@@ -149,6 +149,9 @@ Creates LLM clients from `config/models.yaml`. Provides:
 
 **Agent 2 — ElevenLabsSTTAgent**
 - Transcribes audio using ElevenLabs Scribe v2 with speaker diarization
+- COST-01: Edge-trim silence + downsample to 16 kHz mono (internal compression removed to preserve timestamps)
+- REAL-12: Inserts `[M:SS silence]` / `[M:SS silence — hold]` markers for gaps >30s
+- Silence statistics extracted from word timestamps (zero additional API cost)
 - Batch processing with progress tracking
 - Persists transcripts to `data/transcripts/`
 - Cost tracking (~$0.005/min)
@@ -177,7 +180,7 @@ Creates LLM clients from `config/models.yaml`. Provides:
    ↓
 5. TranscriptChunker → truncated if >30K tokens
    ↓
-6. InferenceEngine → LLM evaluation (24 criteria scored)
+6. InferenceEngine → LLM evaluation (48 criteria scored)
    ↓
 7. ResponseParser → validated JSON with scores + evidence
    ↓

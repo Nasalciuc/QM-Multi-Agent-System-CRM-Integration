@@ -364,6 +364,15 @@ class TestReal09PromptSpeakerGuidance:
         content = prompt_path.read_text(encoding="utf-8")
         assert "VERBATIM" in content
 
+    def test_prompt_has_silence_interpretation(self):
+        """SILENCE-FIX: qa_system.txt contains silence marker instructions."""
+        from pathlib import Path
+        prompt_path = Path(__file__).parent.parent / "src" / "prompts" / "qa_system.txt"
+        content = prompt_path.read_text(encoding="utf-8")
+        assert "SILENCE MARKERS:" in content
+        assert "hold" in content.lower()
+        assert "continuous_feedback" in content or "trial_close" in content
+
 
 # ═══════════════════════════════════════════════════════════════════
 # REAL-10: Price redaction (opt-in)
@@ -459,7 +468,7 @@ class TestReal12TimestampMarkers:
             self._make_word(" ", "speaker_0", wtype="spacing", start=61.2),
             self._make_word("bye", "speaker_0", start=61.5),
         ]
-        text, speakers, merged = ElevenLabsSTTAgent._build_diarized_transcript(words)
+        text, speakers, merged, parsed_words = ElevenLabsSTTAgent._build_diarized_transcript(words)
         assert "[1:00 silence]" in text
 
     def test_no_marker_for_short_gap(self):
@@ -468,7 +477,7 @@ class TestReal12TimestampMarkers:
             self._make_word("Hello", "speaker_0", start=0.0),
             self._make_word("there", "speaker_0", start=10.0),
         ]
-        text, _, _ = ElevenLabsSTTAgent._build_diarized_transcript(words)
+        text, _, _, _ = ElevenLabsSTTAgent._build_diarized_transcript(words)
         assert "silence" not in text
 
     def test_no_timestamps_still_works(self):
@@ -477,7 +486,7 @@ class TestReal12TimestampMarkers:
             self._make_word("Hello", "speaker_0"),
             self._make_word("there", "speaker_0"),
         ]
-        text, _, _ = ElevenLabsSTTAgent._build_diarized_transcript(words)
+        text, _, _, _ = ElevenLabsSTTAgent._build_diarized_transcript(words)
         assert "Hello" in text
         assert "silence" not in text
 
@@ -488,7 +497,7 @@ class TestReal12TimestampMarkers:
             self._make_word("pause1", "speaker_0", start=45.0),
             self._make_word("pause2", "speaker_0", start=120.0),
         ]
-        text, _, _ = ElevenLabsSTTAgent._build_diarized_transcript(words)
+        text, _, _, _ = ElevenLabsSTTAgent._build_diarized_transcript(words)
         assert text.count("silence") == 2
 
     def test_gap_formats_correctly(self):
@@ -497,5 +506,102 @@ class TestReal12TimestampMarkers:
             self._make_word("Hello", "speaker_0", start=0.0),
             self._make_word("bye", "speaker_0", start=90.0),
         ]
-        text, _, _ = ElevenLabsSTTAgent._build_diarized_transcript(words)
+        text, _, _, _ = ElevenLabsSTTAgent._build_diarized_transcript(words)
         assert "[1:30 silence]" in text
+
+    # ── SILENCE-FIX: Hold-language detection tests ───────────────
+
+    def test_hold_language_produces_hold_marker(self):
+        """SILENCE-FIX: Hold language before silence → [M:SS silence — hold]."""
+        words = [
+            self._make_word("Let", "speaker_0", start=0.0),
+            self._make_word(" ", "speaker_0", wtype="spacing", start=0.2),
+            self._make_word("me", "speaker_0", start=0.3),
+            self._make_word(" ", "speaker_0", wtype="spacing", start=0.5),
+            self._make_word("check", "speaker_0", start=0.6),
+            # 60-second gap (hold)
+            self._make_word("OK", "speaker_0", start=60.6),
+        ]
+        text, _, _, _ = ElevenLabsSTTAgent._build_diarized_transcript(words)
+        assert "[1:00 silence \u2014 hold]" in text
+
+    def test_no_hold_language_produces_bare_marker(self):
+        """Regular silence without hold language → bare [M:SS silence]."""
+        words = [
+            self._make_word("The", "speaker_0", start=0.0),
+            self._make_word(" ", "speaker_0", wtype="spacing", start=0.2),
+            self._make_word("price", "speaker_0", start=0.3),
+            self._make_word(" ", "speaker_0", wtype="spacing", start=0.5),
+            self._make_word("is", "speaker_0", start=0.6),
+            # 45-second gap (client thinking about price — NOT a hold)
+            self._make_word("OK", "speaker_1", start=45.6),
+        ]
+        text, _, _, _ = ElevenLabsSTTAgent._build_diarized_transcript(words)
+        assert "silence]" in text
+        assert "hold" not in text
+
+    def test_hold_variations_detected(self):
+        """Various hold phrases should all produce hold markers."""
+        hold_phrases = [
+            "bear with me",
+            "one moment please",
+            "give me a second",
+            "hang tight",
+            "I'll be right back",
+            "let me look that up",
+        ]
+        for phrase in hold_phrases:
+            phrase_words = phrase.split()
+            words = []
+            t = 0.0
+            for w in phrase_words:
+                words.append(self._make_word(w, "speaker_0", start=t))
+                t += 0.3
+                words.append(self._make_word(" ", "speaker_0", wtype="spacing", start=t))
+                t += 0.1
+            # Add 60s gap + response
+            words.append(self._make_word("OK", "speaker_0", start=t + 60))
+            text, _, _, _ = ElevenLabsSTTAgent._build_diarized_transcript(words)
+            assert "hold" in text, f"Hold phrase not detected: {phrase!r}"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# SILENCE-FIX: Silence statistics from word timestamps
+# ═══════════════════════════════════════════════════════════════════
+
+class TestSilenceAnalysis:
+    """SILENCE-FIX: Silence statistics extracted from word timestamps."""
+
+    def test_analyze_silence_basic(self):
+        parsed_words = [
+            ("Hello", "speaker_0", "word", 0.0),
+            (" ", "speaker_0", "spacing", 0.5),
+            ("there", "speaker_0", "word", 1.0),
+            # 45-second gap
+            ("OK", "speaker_0", "word", 46.0),
+            (" ", "speaker_0", "spacing", 46.5),
+            ("bye", "speaker_0", "word", 47.0),
+        ]
+        stats = ElevenLabsSTTAgent._analyze_silence(parsed_words)
+        assert stats["num_gaps_over_30s"] == 1
+        assert stats["longest_gap_ms"] >= 44000
+        assert stats["num_gaps"] >= 1
+        assert stats["silence_pct"] > 50
+
+    def test_analyze_silence_no_gaps(self):
+        parsed_words = [
+            ("Hello", "speaker_0", "word", 0.0),
+            ("there", "speaker_0", "word", 0.5),
+        ]
+        stats = ElevenLabsSTTAgent._analyze_silence(parsed_words)
+        assert stats["num_gaps_over_30s"] == 0
+        assert stats["longest_gap_ms"] == 0
+        assert stats["silence_pct"] == 0
+
+    def test_analyze_silence_no_timestamps(self):
+        parsed_words = [
+            ("Hello", "speaker_0", "word", None),
+            ("there", "speaker_0", "word", None),
+        ]
+        stats = ElevenLabsSTTAgent._analyze_silence(parsed_words)
+        assert stats["num_gaps"] == 0

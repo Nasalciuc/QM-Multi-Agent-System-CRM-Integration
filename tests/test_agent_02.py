@@ -136,7 +136,7 @@ class TestDiarization:
             {"text": "there", "speaker_id": "speaker_0", "type": "word"},
             {"text": "Hello", "speaker_id": "speaker_1", "type": "word"},
         ]
-        text, speakers, merged = ElevenLabsSTTAgent._build_diarized_transcript(words)
+        text, speakers, merged, parsed_words = ElevenLabsSTTAgent._build_diarized_transcript(words)
         assert "Speaker 0:" in text
         assert "Speaker 1:" in text
         assert len(speakers) == 2
@@ -144,7 +144,7 @@ class TestDiarization:
 
     def test_build_diarized_transcript_empty(self):
         """Empty words list should return empty string."""
-        text, speakers, merged = ElevenLabsSTTAgent._build_diarized_transcript([])
+        text, speakers, merged, parsed_words = ElevenLabsSTTAgent._build_diarized_transcript([])
         assert text == ""
         assert len(speakers) == 0
         assert merged is False
@@ -187,7 +187,7 @@ class TestDiarization:
             {"text": "Wait", "speaker_id": "speaker_2", "type": "word"},
             {"text": "Also", "speaker_id": "speaker_3", "type": "word"},
         ]
-        text, speakers, merged = ElevenLabsSTTAgent._build_diarized_transcript(words)
+        text, speakers, merged, parsed_words = ElevenLabsSTTAgent._build_diarized_transcript(words)
         assert merged is True
         # Only top-2 effective speaker IDs remain
         assert len(speakers) == 2
@@ -203,7 +203,7 @@ class TestDiarization:
             {"text": "Hello", "speaker_id": "speaker_0", "type": "word"},
             {"text": "Hi", "speaker_id": "speaker_1", "type": "word"},
         ]
-        text, speakers, merged = ElevenLabsSTTAgent._build_diarized_transcript(words)
+        text, speakers, merged, parsed_words = ElevenLabsSTTAgent._build_diarized_transcript(words)
         assert merged is False
         assert len(speakers) == 2
 
@@ -554,16 +554,16 @@ class TestPreprocessAudio:
         assert stats["action"] == "all_silence"
         assert stats["savings_pct"] == 100.0
 
-    def test_preprocess_compresses_long_gaps(self, mock_client, tmp_path):
-        """Long internal silence gaps (>2s) should be compressed to 1s."""
+    def test_preprocess_preserves_internal_gaps(self, mock_client, tmp_path):
+        """SILENCE-FIX: Internal silence gaps must NOT be compressed."""
         from pydub import AudioSegment
         from pydub.generators import Sine
 
-        # 2s tone + 6s silence + 2s tone = 10s
+        # 2s tone + 10s silence + 2s tone = 14s
         tone = Sine(440).to_audio_segment(duration=2000).apply_gain(-20)
-        gap = AudioSegment.silent(duration=6000)
+        gap = AudioSegment.silent(duration=10000)
         audio = tone + gap + tone
-        audio_path = tmp_path / "gapped.wav"
+        audio_path = tmp_path / "internal_gap.wav"
         audio.export(str(audio_path), format="wav")
 
         agent = ElevenLabsSTTAgent(
@@ -573,13 +573,14 @@ class TestPreprocessAudio:
             preprocess_audio=True,
         )
         preprocessed, stats = agent._preprocess_audio(audio_path)
-        assert preprocessed is not None
         assert stats is not None
-        assert stats["savings_pct"] > 10
-        # Processed should be roughly 2s + 1s + 2s = 5s (± padding)
-        assert stats["processed_duration_ms"] < 7000
-        if preprocessed.exists():
-            preprocessed.unlink()
+        # Internal gap should be preserved — only edge trim + downsample
+        # Processed duration should be close to original (14s) minus minimal edge trim
+        if preprocessed is not None:
+            assert stats["processed_duration_ms"] > 12000  # Gap preserved
+        else:
+            # No preprocessing needed (savings < 5%) — that's fine too
+            assert stats["action"] == "no_change"
 
     def test_preprocess_disabled(self, mock_client, tmp_path):
         """When preprocess_audio=False, transcribe() should not call _preprocess_audio."""
