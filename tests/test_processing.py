@@ -143,14 +143,14 @@ class TestTranscriptCleaner:
     def test_three_speakers_minor_merges_to_nearest(self):
         """SPEAKER-03 + REAL-01: Minor speaker merges into nearest major speaker."""
         cleaner = TranscriptCleaner(direction="outbound", remove_fillers=False)
-        # REAL-01: Speaker 0 = Client (first), Speaker 1 = Agent (second)
-        # Speaker 2 = minor → merges to nearest preceding major (Speaker 1 = Agent)
+        # REAL-01: Speaker 1 introduces self as agent → Agent
+        # Speaker 0 = Client (first), Speaker 2 = minor → merges to nearest preceding major
         raw = (
             "Speaker 0: Hello\n"
-            "Speaker 1: Hi I need flights\n"
+            "Speaker 1: Hi my name is Alex calling from the travel desk\n"
             "Speaker 0: Sure thing\n"
-            "Speaker 1: From Dallas\n"
-            "Speaker 1: To Beijing\n"
+            "Speaker 1: Let me check\n"
+            "Speaker 1: Checking fares now\n"
             "Speaker 2: Also want hotels\n"
             "Speaker 0: Got it\n"
         )

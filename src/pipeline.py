@@ -18,6 +18,13 @@ import os
 import shutil
 import signal
 import threading
+
+# TASK-1: Keys that must NEVER appear in exported evaluation dicts.
+# Guards against PII leakage from raw LLM responses / debug artifacts.
+_EXPORT_BLOCKED_KEYS = frozenset({
+    "raw_response", "raw_text", "raw_llm_output",
+    "system_prompt", "user_prompt",
+})
 import time
 import logging
 
@@ -341,12 +348,19 @@ class Pipeline:
             provider = evaluation.get("provider_used", evaluation.get("model_used", "unknown"))
             self._providers_used.add(provider)
 
+            # TASK-1: Strip any blocked keys from evaluation before export
+            # Guards against PII leakage even if upstream code adds raw text
+            for blocked_key in _EXPORT_BLOCKED_KEYS:
+                evaluation.pop(blocked_key, None)
+
             evaluations.append({
                 "filename": filename,
                 "transcript": data["transcript"],
                 "duration_min": data.get("duration", 0),
                 "call_type": evaluation.get("call_type", "Unknown"),
                 "overall_score": score_data["overall_score"],
+                "confidence": score_data.get("confidence", 0.0),
+                "confidence_factors": score_data.get("confidence_factors", {}),
                 "score_data": score_data,
                 "criteria": evaluation.get("criteria", {}),
                 "overall_assessment": evaluation.get("overall_assessment", ""),
@@ -356,6 +370,7 @@ class Pipeline:
                 "model_used": evaluation.get("model_used", ""),
                 "tokens_used": evaluation.get("tokens_used", {}),
                 "cost_usd": cost,
+                "criteria_version": evaluation.get("criteria_version", ""),
                 "status": "Success" if "error" not in evaluation else evaluation["error"]
             })
             # SILENCE-FIX: Propagate silence stats from Agent 02 to evaluation
@@ -506,7 +521,8 @@ class Pipeline:
         for e in evaluations:
             if "overall_score" not in e:
                 continue
+            conf_str = f" | Conf: {e.get('confidence', 0.0):.2f}" if "confidence" in e else ""
             logger.info(
                 f"  {e['filename']} | {e.get('call_type', 'Unknown')} | "
-                f"Score: {e['overall_score']:.1f} | Cost: ${e.get('cost_usd', 0):.4f}"
+                f"Score: {e['overall_score']:.1f}{conf_str} | Cost: ${e.get('cost_usd', 0):.4f}"
             )

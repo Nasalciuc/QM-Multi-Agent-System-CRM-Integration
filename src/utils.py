@@ -28,6 +28,7 @@ from config_loader import (  # noqa: F401
     load_env,
     validate_env,
     load_criteria,
+    validate_agents_config,
     validate_models_config,
 )
 from logging_setup import (  # noqa: F401
@@ -97,6 +98,7 @@ __all__ = [
     "load_env",
     "validate_env",
     "load_criteria",
+    "validate_agents_config",
     "validate_models_config",
     "JsonLogFormatter",
     "json_serializer",

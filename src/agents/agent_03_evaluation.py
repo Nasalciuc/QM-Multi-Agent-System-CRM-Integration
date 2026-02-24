@@ -296,12 +296,21 @@ class QualityManagementAgent:
         """
         Calculate overall score (0-100) from YES/PARTIAL/NO scores.
         YES = 1.0 * weight, PARTIAL = 0.5 * weight, NO = 0.0, N/A = skip
+
+        TASK-6: Also computes a *confidence* metric (0.0–1.0) representing
+        how reliable the score is.  Factors:
+          - criteria_coverage: fraction of criteria that were actually scored
+            (not N/A).
+          - agreement_ratio: proportion of YES+NO answers vs PARTIAL (PARTIAL
+            indicates the LLM was uncertain).
+          - sample_size: small penalty when fewer than 10 criteria were scored.
         """
         criteria_results = evaluation.get("criteria", {})
         if not criteria_results:
             return {
                 "overall_score": 0, "total_points": 0, "total_weight": 0,
                 "category_scores": {}, "score_breakdown": {},
+                "confidence": 0.0, "confidence_factors": {},
             }
 
         total_points = 0
@@ -353,6 +362,30 @@ class QualityManagementAgent:
                 "count": data["count"],
             }
 
+        # TASK-6: Confidence calculation ──────────────────────────────
+        scored_count = yes_count + partial_count + no_count
+        total_criteria = scored_count + na_count
+
+        # Factor 1: criteria_coverage — what fraction was actually scored
+        criteria_coverage = scored_count / max(1, total_criteria)
+
+        # Factor 2: agreement_ratio — YES+NO are decisive; PARTIAL is uncertain
+        agreement_ratio = (
+            (yes_count + no_count) / max(1, scored_count)
+            if scored_count > 0 else 0.0
+        )
+
+        # Factor 3: sample_size — small penalty when < 10 scored criteria
+        sample_factor = min(1.0, scored_count / 10.0)
+
+        # Weighted combination
+        confidence = round(
+            0.50 * criteria_coverage
+            + 0.30 * agreement_ratio
+            + 0.20 * sample_factor,
+            3,
+        )
+
         return {
             "overall_score": round(overall_score, 1),
             "total_points": round(total_points, 2),
@@ -363,6 +396,12 @@ class QualityManagementAgent:
                 "partial_count": partial_count,
                 "no_count": no_count,
                 "na_count": na_count,
+            },
+            "confidence": confidence,
+            "confidence_factors": {
+                "criteria_coverage": round(criteria_coverage, 3),
+                "agreement_ratio": round(agreement_ratio, 3),
+                "sample_factor": round(sample_factor, 3),
             },
         }
 

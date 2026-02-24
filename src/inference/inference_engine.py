@@ -97,7 +97,7 @@ class InferenceEngine:
         "criteria", "overall_assessment", "strengths", "improvements",
         "critical_gaps", "call_type", "model_used", "provider_used",
         "tokens_used", "cost_usd", "eval_time_seconds", "is_followup",
-        "truncated", "pii_redacted", "prompt_hash",
+        "truncated", "pii_redacted", "prompt_hash", "criteria_version",
     })
 
     # Required keys that must be present when loading from cache (#2)
@@ -122,21 +122,48 @@ class InferenceEngine:
 
     @property
     def cache_stats(self) -> Dict:
-        """Return combined L1 (memory) + L2 (disk) cache statistics."""
-        total_lookups = self._memory_hits + self._memory_misses
+        """Return combined L1 (memory) + L2 (disk) cache statistics.
+
+        TASK-4: Thread-safe — reads counters under _cache_lock to
+        prevent torn reads when another thread is mid-update.
+        """
+        with self._cache_lock:
+            mem_hits = self._memory_hits
+            mem_misses = self._memory_misses
+            disk_hits = self._disk_hits
+            disk_misses = self._disk_misses
+            write_failures = self._cache_write_failures
+            mem_size = len(self._memory_cache)
+            mem_max = self._memory_cache_maxsize
+
+        total_lookups = mem_hits + mem_misses
         return {
-            "memory_hits": self._memory_hits,
-            "memory_misses": self._memory_misses,
-            "disk_hits": self._disk_hits,
-            "disk_misses": self._disk_misses,
-            "cache_write_failures": self._cache_write_failures,  # MED-13
+            "memory_hits": mem_hits,
+            "memory_misses": mem_misses,
+            "disk_hits": disk_hits,
+            "disk_misses": disk_misses,
+            "cache_write_failures": write_failures,
             "total_lookups": total_lookups,
             "combined_hit_rate_pct": round(
-                (self._memory_hits + self._disk_hits) / max(1, total_lookups) * 100, 1
+                (mem_hits + disk_hits) / max(1, total_lookups) * 100, 1
             ),
-            "memory_cache_size": len(self._memory_cache),
-            "memory_cache_maxsize": self._memory_cache_maxsize,
+            "memory_cache_size": mem_size,
+            "memory_cache_maxsize": mem_max,
         }
+
+    def _check_memory_cache(self, key: str) -> Optional[Dict]:
+        """TASK-4: Thread-safe L1 memory cache lookup.
+
+        Returns the cached dict if found (and promotes to MRU),
+        or None on miss.  Increments hit/miss counters atomically.
+        """
+        with self._cache_lock:
+            if key in self._memory_cache:
+                self._memory_cache.move_to_end(key)
+                self._memory_hits += 1
+                return self._memory_cache[key]
+            self._memory_misses += 1
+        return None
 
     def _promote_to_memory(self, key: str, data: Dict) -> None:
         """Promote a disk cache entry to the in-memory LRU cache.
@@ -269,24 +296,23 @@ class InferenceEngine:
     ) -> Dict:
         """Inner evaluation with cache check and LLM call (HIGH-03: runs under per-key lock)."""
         if self._enable_cache:
-            # L1: Check in-memory LRU cache first (thread-safe read)
-            with self._cache_lock:
-                if cache_key in self._memory_cache:
-                    self._memory_cache.move_to_end(cache_key)
-                    self._memory_hits += 1
-                    logger.info(f"L1 memory cache hit for {call_type} evaluation (key={cache_key[:12]})")
-                    return self._memory_cache[cache_key]
-                self._memory_misses += 1
+            # L1: Check in-memory LRU cache first (TASK-4: via helper)
+            cached_mem = self._check_memory_cache(cache_key)
+            if cached_mem is not None:
+                logger.info(f"L1 memory cache hit for {call_type} evaluation (key={cache_key[:12]})")
+                return cached_mem
 
             # L2: Check disk cache
             cached = self._load_cache(cache_key)
             if cached:
-                self._disk_hits += 1
+                with self._cache_lock:
+                    self._disk_hits += 1
                 # Promote to L1 for faster future lookups
                 self._promote_to_memory(cache_key, cached)
                 logger.info(f"L2 disk cache hit for {call_type} evaluation (key={cache_key[:12]})")
                 return cached
-            self._disk_misses += 1
+            with self._cache_lock:
+                self._disk_misses += 1
 
         # Retry loop
         parser = ResponseParser(expected_keys=expected_keys)
@@ -317,6 +343,12 @@ class InferenceEngine:
                 evaluation["eval_time_seconds"] = llm_response.elapsed_seconds
                 # #26: Prompt template version tracking
                 evaluation["prompt_hash"] = prompt_hash
+                # TASK-5: Criteria version tracking — hash of full criteria
+                # content (descriptions + weights + categories) so downstream
+                # consumers can detect when criteria definitions change.
+                evaluation["criteria_version"] = hashlib.sha256(
+                    json.dumps(criteria, sort_keys=True, default=str).encode()
+                ).hexdigest()[:16]
 
                 # Cache the result — only if it has no error key (HIGH-NEW-7)
                 if self._enable_cache and "error" not in evaluation:
@@ -338,13 +370,15 @@ class InferenceEngine:
                     )
                     continue
                 logger.error(f"Validation failed after {max_retries + 1} attempts: {e}")
-                # CRIT-NEW-1: PII-redact raw LLM text before returning —
-                # this dict may flow all the way to export/JSON files.
-                redacted_raw = _get_pii_redactor().redact(raw_text)["text"] if raw_text else ""
+                # CRIT-NEW-1 / TASK-1: Log redacted raw text for debug but
+                # do NOT include raw_response in the returned dict — it may
+                # flow to export/JSON files and leak PII.
+                if raw_text:
+                    redacted_raw = _get_pii_redactor().redact(raw_text)["text"]
+                    logger.debug(f"Raw LLM response (redacted): {redacted_raw[:500]}")
                 return {
                     "error": f"Validation error: {e}",
                     "call_type": call_type,
-                    "raw_response": redacted_raw,
                 }
 
             except Exception as e:

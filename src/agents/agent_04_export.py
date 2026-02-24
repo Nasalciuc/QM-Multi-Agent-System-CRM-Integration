@@ -79,6 +79,7 @@ class IntegrationAgent:
                 "File": e.get("filename", ""),
                 "Type": e.get("call_type", ""),
                 "Score": e.get("overall_score", 0),
+                "Confidence": e.get("confidence", 0.0),
             }
             # Dynamic category columns from criteria_ref
             all_categories = sorted(set(c.get("category", "unknown") for c in criteria_ref.values()))

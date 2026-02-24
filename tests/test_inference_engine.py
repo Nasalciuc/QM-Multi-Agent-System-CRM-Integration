@@ -306,10 +306,10 @@ class TestEvaluateFlow:
             )
 
         assert "error" in result
-        raw = result.get("raw_response", "")
-        # Phone number should have been redacted
-        assert "555-123-4567" not in raw
-        assert "[PHONE]" in raw
+        # TASK-1: raw_response is no longer returned in error dicts (PII safety)
+        assert "raw_response" not in result
+        # Phone number must not appear anywhere in the result
+        assert "555-123-4567" not in str(result)
 
 
 # --- Tests: MED-13 — Cache write failure counter ---

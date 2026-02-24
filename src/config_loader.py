@@ -62,6 +62,58 @@ def load_criteria(config_path: str = "config/qa_criteria.yaml") -> dict:
     return criteria
 
 
+def validate_agents_config(config: dict) -> None:
+    """TASK-3: Validate agents.yaml structure at startup.
+
+    Checks that all required top-level sections exist and required
+    sub-keys are present.  Raises ValueError with clear message if
+    the config is malformed or has duplicate/missing sections.
+    """
+    if not isinstance(config, dict):
+        raise ValueError(
+            f"agents.yaml must be a YAML mapping, got {type(config).__name__}"
+        )
+
+    _REQUIRED_SECTIONS = {"crm", "elevenlabs", "integration", "pipeline"}
+    missing_sections = _REQUIRED_SECTIONS - set(config.keys())
+    if missing_sections:
+        raise ValueError(
+            f"agents.yaml missing required sections: {sorted(missing_sections)}"
+        )
+
+    # ElevenLabs required keys
+    el = config["elevenlabs"]
+    if not isinstance(el, dict):
+        raise ValueError("agents.yaml 'elevenlabs' must be a mapping")
+    _EL_REQUIRED = {"model", "cost_per_minute", "output_folder", "diarize"}
+    el_missing = _EL_REQUIRED - set(el.keys())
+    if el_missing:
+        raise ValueError(f"agents.yaml elevenlabs missing keys: {sorted(el_missing)}")
+
+    # CRM required keys
+    crm = config["crm"]
+    if not isinstance(crm, dict):
+        raise ValueError("agents.yaml 'crm' must be a mapping")
+    _CRM_REQUIRED = {"base_url", "download_folder"}
+    crm_missing = _CRM_REQUIRED - set(crm.keys())
+    if crm_missing:
+        raise ValueError(f"agents.yaml crm missing keys: {sorted(crm_missing)}")
+
+    # Pipeline required keys
+    pipe = config["pipeline"]
+    if not isinstance(pipe, dict):
+        raise ValueError("agents.yaml 'pipeline' must be a mapping")
+
+    # Integration required keys
+    integ = config["integration"]
+    if not isinstance(integ, dict):
+        raise ValueError("agents.yaml 'integration' must be a mapping")
+    if "output_folder" not in integ:
+        raise ValueError("agents.yaml integration missing key: 'output_folder'")
+
+    logger.info("agents.yaml validation passed")
+
+
 def validate_models_config(config_path: str = "config/models.yaml") -> dict:
     """Load and validate models.yaml structure at startup.
 

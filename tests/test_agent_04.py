@@ -135,7 +135,7 @@ class TestExportAll:
         files = agent.export_all(sample_evaluations, criteria_ref)
         df = pd.read_csv(files["csv_summary"])
         # Dynamic category columns from criteria_ref + standard columns
-        expected_cols = {"File", "Type", "Score", "opening", "YES", "PARTIAL", "NO", "Cost"}
+        expected_cols = {"File", "Type", "Score", "Confidence", "opening", "YES", "PARTIAL", "NO", "Cost"}
         assert set(df.columns) == expected_cols
 
 

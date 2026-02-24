@@ -36,13 +36,25 @@ _AGENT_INTRO_PATTERNS = [
     re.compile(r"\bI'?m calling (?:from|on behalf)\b", re.IGNORECASE),
     re.compile(r"\bI'?ll be your\b.+?(?:advisor|expert|agent|consultant|specialist)", re.IGNORECASE),
     re.compile(r"\bcalling from\b", re.IGNORECASE),
+    # TASK-2: Additional agent-content patterns
+    re.compile(r"\bsenior travel\b", re.IGNORECASE),
+    re.compile(r"\bdedicated expert\b", re.IGNORECASE),
+    re.compile(r"\bI'?m (?:\w+\s+)?(?:from|with)\s+(?:buy\s*business|the company)\b", re.IGNORECASE),
+    re.compile(r"\blet me (?:check|look|pull up|find)\b.+?(?:fares?|options?|flights?|availability)", re.IGNORECASE),
 ]
 
-# REAL-01: Patterns that indicate a speaker is a CLIENT (answering the phone)
+# REAL-01 / TASK-2: Patterns that indicate a speaker is a CLIENT
 _CLIENT_ANSWER_PATTERNS = [
-    re.compile(r"^(?:hello|hi|hey|yes|yeah|yo)\s*[.?!,]?\s*$", re.IGNORECASE),
+    # Bare "hello?" / "yes?" with question mark — client picking up the phone
+    re.compile(r"^(?:hello|hi|hey|yes|yeah)\s*\?\s*$", re.IGNORECASE),
     re.compile(r"\bwho(?:'s| is) (?:this|calling)\b", re.IGNORECASE),
     re.compile(r"\bhow did you get (?:my|this) number\b", re.IGNORECASE),
+    # TASK-2: Additional client-content patterns
+    re.compile(r"\bI(?:'m| am) (?:looking|interested|trying)\b", re.IGNORECASE),
+    re.compile(r"\bI (?:need|want|would like)\s+(?:a |to )?\b(?:fly|flight|ticket|book)", re.IGNORECASE),
+    re.compile(r"\bmy budget is\b", re.IGNORECASE),
+    re.compile(r"\bwe(?:'re| are) (?:traveling|flying|going)\b", re.IGNORECASE),
+    re.compile(r"\bI (?:saw|found|got)\s+(?:your|an?|the)\s+(?:ad|number|email|website)", re.IGNORECASE),
 ]
 
 
@@ -162,10 +174,31 @@ class TranscriptCleaner:
         else:
             merge_map = {}
 
-        # REAL-01: Determine agent_speaker by self-introduction, NOT position.
-        # Scan first 15 lines for agent intro patterns.
+        # REAL-01 / TASK-2: Determine agent_speaker using priority-ordered detection:
+        # Priority 1: Agent self-introduction patterns (highest confidence)
+        # Priority 2: Client answer patterns (medium confidence — the OTHER speaker is agent)
+        # Priority 3: Direction-based position heuristic (lowest confidence)
         agent_speaker = self._detect_agent_by_intro(lines, merge_map)
         detection_method = "intro"
+
+        if agent_speaker is None:
+            # TASK-2: Try client-content detection — if we find the client,
+            # the OTHER speaker must be the agent.
+            client_speaker = self._detect_client_by_content(lines, merge_map)
+            if client_speaker is not None:
+                # Find the "other" major speaker
+                second = self._detect_second_speaker(lines, first_speaker)
+                all_speakers = {first_speaker}
+                if second:
+                    all_speakers.add(second)
+                other = all_speakers - {client_speaker}
+                if other:
+                    agent_speaker = other.pop()
+                    detection_method = "client_content"
+                    logger.debug(
+                        f"TASK-2: Agent inferred from client-content detection: "
+                        f"client={client_speaker}, agent={agent_speaker}"
+                    )
 
         if agent_speaker is None:
             # Fallback: direction-based heuristic (old behaviour)
@@ -292,6 +325,38 @@ class TranscriptCleaner:
                 if pattern.search(content):
                     logger.debug(
                         f"REAL-01: Agent detected by intro pattern on {speaker_id}: "
+                        f"{pattern.pattern!r}"
+                    )
+                    return effective
+        return None
+
+    @staticmethod
+    def _detect_client_by_content(
+        lines: list, merge_map: dict, scan_lines: int = 15,
+    ) -> Optional[str]:
+        """TASK-2: Identify the client by answer / inquiry patterns.
+
+        Scans the first *scan_lines* speaker lines for phrases like
+        "who is this?", "I'm looking for ...", "I need a flight", etc.
+
+        Returns the (effective) speaker_id of the client, or None if
+        no client-answer pattern was found.
+        """
+        scanned = 0
+        for line in lines:
+            match = re.match(r"^(Speaker\s*(\d+))\s*:\s*(.+)", line, re.IGNORECASE)
+            if not match:
+                continue
+            scanned += 1
+            if scanned > scan_lines:
+                break
+            speaker_id = match.group(1).lower()
+            content = match.group(3)
+            effective = merge_map.get(speaker_id, speaker_id)
+            for pattern in _CLIENT_ANSWER_PATTERNS:
+                if pattern.search(content):
+                    logger.debug(
+                        f"TASK-2: Client detected by content pattern on {speaker_id}: "
                         f"{pattern.pattern!r}"
                     )
                     return effective
