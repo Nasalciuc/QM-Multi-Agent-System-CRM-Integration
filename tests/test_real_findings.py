@@ -564,6 +564,17 @@ class TestReal12TimestampMarkers:
             text, _, _, _ = ElevenLabsSTTAgent._build_diarized_transcript(words)
             assert "hold" in text, f"Hold phrase not detected: {phrase!r}"
 
+    def test_hold_language_case_insensitive(self):
+        """Hold language detection should be case-insensitive."""
+        words = [
+            self._make_word("PLEASE", "speaker_0", start=0.0),
+            self._make_word(" ", "speaker_0", wtype="spacing", start=0.2),
+            self._make_word("HOLD", "speaker_0", start=0.3),
+            self._make_word("OK", "speaker_0", start=60.3),
+        ]
+        text, _, _, _ = ElevenLabsSTTAgent._build_diarized_transcript(words)
+        assert "hold" in text.lower()
+
 
 # ═══════════════════════════════════════════════════════════════════
 # SILENCE-FIX: Silence statistics from word timestamps
@@ -605,3 +616,42 @@ class TestSilenceAnalysis:
         ]
         stats = ElevenLabsSTTAgent._analyze_silence(parsed_words)
         assert stats["num_gaps"] == 0
+
+    def test_analyze_silence_empty_words(self):
+        """Empty word list should return zeroed stats."""
+        stats = ElevenLabsSTTAgent._analyze_silence([])
+        assert stats["num_gaps"] == 0
+        assert stats["silence_pct"] == 0
+        assert stats["longest_gap_ms"] == 0
+
+    def test_analyze_silence_single_long_gap(self):
+        """A single 60s gap should be flagged as >30s."""
+        parsed_words = [
+            ("Hello", "s0", "word", 0.0),
+            ("bye", "s0", "word", 60.0),
+        ]
+        stats = ElevenLabsSTTAgent._analyze_silence(parsed_words)
+        assert stats["num_gaps"] == 1
+        assert stats["num_gaps_over_30s"] == 1
+        assert stats["longest_gap_ms"] >= 59000
+
+    def test_analyze_silence_anomaly_flag(self):
+        """Calls with >50% silence should be flagged as anomalous."""
+        parsed_words = [
+            ("Hi", "s0", "word", 0.0),
+            ("there", "s0", "word", 1.0),
+            ("bye", "s0", "word", 100.0),  # 99s gap in 100s call
+        ]
+        stats = ElevenLabsSTTAgent._analyze_silence(parsed_words)
+        assert stats["silence_pct"] > 50
+
+    def test_analyze_silence_gap_locations_capped(self):
+        """Gap locations list should be capped at 20 entries."""
+        # Create 25 gaps > 1s
+        words = []
+        t = 0.0
+        for i in range(26):
+            words.append(("word", "s0", "word", t))
+            t += 2.0  # 2s gap between each (> 1s threshold)
+        stats = ElevenLabsSTTAgent._analyze_silence(words)
+        assert len(stats["gap_locations"]) <= 20

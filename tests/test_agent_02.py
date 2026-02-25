@@ -582,6 +582,68 @@ class TestPreprocessAudio:
             # No preprocessing needed (savings < 5%) — that's fine too
             assert stats["action"] == "no_change"
 
+    def test_preprocess_still_trims_edges(self, mock_client, tmp_path):
+        """Edge silence (before Hello / after Goodbye) should still be trimmed."""
+        from pydub import AudioSegment
+        from pydub.generators import Sine
+
+        # 10s silence + 2s tone + 10s silence = 22s
+        silence = AudioSegment.silent(duration=10000)
+        tone = Sine(440).to_audio_segment(duration=2000).apply_gain(-20)
+        audio = silence + tone + silence
+        audio_path = tmp_path / "edge_padded.wav"
+        audio.export(str(audio_path), format="wav")
+
+        agent = ElevenLabsSTTAgent(
+            client=mock_client,
+            persist_transcripts=False,
+            enable_stt_cache=False,
+            preprocess_audio=True,
+        )
+        preprocessed, stats = agent._preprocess_audio(audio_path)
+        assert preprocessed is not None
+        assert stats["action"] == "preprocessed"
+        # Should trim ~20s of edge silence, leaving ~3s (2s tone + 1s padding)
+        assert stats["processed_duration_ms"] < 5000
+        assert stats["savings_pct"] > 50
+        if preprocessed.exists():
+            preprocessed.unlink()
+
+    def test_preprocess_long_audio_preserves_holds(self, mock_client, tmp_path):
+        """A long call with hold periods should preserve ALL internal silence.
+
+        Simulates the 1.5-hour call that exposed the COST-01/REAL-12 conflict:
+        tone (agent talking) + 90s silence (hold) + tone (agent returns).
+        The 90s hold MUST be preserved for REAL-12 to generate [1:30 silence].
+        """
+        from pydub import AudioSegment
+        from pydub.generators import Sine
+
+        tone = Sine(440).to_audio_segment(duration=3000).apply_gain(-20)
+        hold = AudioSegment.silent(duration=90000)  # 90 seconds hold
+        audio = tone + hold + tone  # 96s total
+        audio_path = tmp_path / "long_with_hold.wav"
+        audio.export(str(audio_path), format="wav")
+
+        agent = ElevenLabsSTTAgent(
+            client=mock_client,
+            persist_transcripts=False,
+            enable_stt_cache=False,
+            preprocess_audio=True,
+        )
+        preprocessed, stats = agent._preprocess_audio(audio_path)
+
+        # The 90s hold is INTERNAL — must be preserved
+        # No edge silence to trim, so no change expected
+        if preprocessed is None:
+            assert stats["action"] == "no_change"
+        else:
+            # Even if some small edge trim, hold must remain
+            assert stats["processed_duration_ms"] > 90000
+
+        if preprocessed and preprocessed.exists():
+            preprocessed.unlink()
+
     def test_preprocess_disabled(self, mock_client, tmp_path):
         """When preprocess_audio=False, transcribe() should not call _preprocess_audio."""
         from pydub import AudioSegment
