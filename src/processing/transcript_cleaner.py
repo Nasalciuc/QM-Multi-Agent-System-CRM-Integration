@@ -43,6 +43,24 @@ _AGENT_INTRO_PATTERNS = [
     re.compile(r"\blet me (?:check|look|pull up|find)\b.+?(?:fares?|options?|flights?|availability)", re.IGNORECASE),
 ]
 
+# P8-FIX-1: Inbound agent patterns — agent answers the phone on inbound calls
+_INBOUND_AGENT_PATTERNS = [
+    re.compile(r"\bthank you for (?:calling|holding|contacting)\b", re.IGNORECASE),
+    re.compile(r"\byou(?:'re| are) speaking (?:to|with)\b", re.IGNORECASE),
+    re.compile(r"\bhow (?:can|may) I (?:help|assist)\b", re.IGNORECASE),
+    re.compile(r"\bwhat can I (?:do|help)\b", re.IGNORECASE),
+    re.compile(r"\bwelcome to\b.+?(?:travel|support|service|desk|line)", re.IGNORECASE),
+]
+
+# P8-FIX-1: IVR / automated system patterns (not a real speaker)
+_IVR_PATTERNS = [
+    re.compile(r"\bthis call (?:is being|may be|will be) recorded\b", re.IGNORECASE),
+    re.compile(r"\bfor quality (?:assurance|and training)\b", re.IGNORECASE),
+    re.compile(r"\bpress \d+ (?:for|to)\b", re.IGNORECASE),
+    re.compile(r"\bplease hold\b", re.IGNORECASE),
+    re.compile(r"\byour call is important\b", re.IGNORECASE),
+]
+
 # REAL-01 / TASK-2: Patterns that indicate a speaker is a CLIENT
 _CLIENT_ANSWER_PATTERNS = [
     # Bare "hello?" / "yes?" with question mark — client picking up the phone
@@ -302,15 +320,22 @@ class TranscriptCleaner:
     def _detect_agent_by_intro(
         lines: list, merge_map: dict, scan_lines: int = 15,
     ) -> Optional[str]:
-        """REAL-01: Identify the agent by self-introduction patterns.
+        """REAL-01 + P8-FIX-1: Identify the agent by self-introduction patterns.
 
         Scans the first *scan_lines* speaker lines for phrases like
         "my name is …", "this is … calling from", etc.
+
+        P8-FIX-1: Also checks for inbound agent patterns ("thank you for
+        calling", "how can I help") and IVR patterns. If Speaker 0 matches
+        IVR and Speaker 1 matches inbound-agent, Speaker 1 is the agent.
 
         Returns the (effective) speaker_id of the agent, or None if
         no introduction pattern was found.
         """
         scanned = 0
+        ivr_speaker: Optional[str] = None
+        inbound_agent_speaker: Optional[str] = None
+
         for line in lines:
             match = re.match(r"^(Speaker\s*(\d+))\s*:\s*(.+)", line, re.IGNORECASE)
             if not match:
@@ -321,6 +346,8 @@ class TranscriptCleaner:
             speaker_id = match.group(1).lower()
             content = match.group(3)
             effective = merge_map.get(speaker_id, speaker_id)
+
+            # Priority 1: Standard agent intro patterns (outbound calls)
             for pattern in _AGENT_INTRO_PATTERNS:
                 if pattern.search(content):
                     logger.debug(
@@ -328,6 +355,39 @@ class TranscriptCleaner:
                         f"{pattern.pattern!r}"
                     )
                     return effective
+
+            # P8-FIX-1: Track IVR and inbound-agent speakers
+            if ivr_speaker is None:
+                for pattern in _IVR_PATTERNS:
+                    if pattern.search(content):
+                        ivr_speaker = effective
+                        logger.debug(
+                            f"P8-FIX-1: IVR detected on {speaker_id}: "
+                            f"{pattern.pattern!r}"
+                        )
+                        break
+
+            if inbound_agent_speaker is None:
+                for pattern in _INBOUND_AGENT_PATTERNS:
+                    if pattern.search(content):
+                        inbound_agent_speaker = effective
+                        logger.debug(
+                            f"P8-FIX-1: Inbound agent detected on {speaker_id}: "
+                            f"{pattern.pattern!r}"
+                        )
+                        break
+
+        # P8-FIX-1: If IVR was found on one speaker and inbound-agent on
+        # another, the inbound-agent speaker is the real agent.
+        if inbound_agent_speaker is not None:
+            if ivr_speaker is not None and ivr_speaker != inbound_agent_speaker:
+                logger.debug(
+                    f"P8-FIX-1: IVR={ivr_speaker}, inbound agent={inbound_agent_speaker}"
+                )
+            return inbound_agent_speaker
+
+        # If only IVR detected (no inbound agent pattern), IVR is not the agent.
+        # Return None so the caller falls through to other heuristics.
         return None
 
     @staticmethod

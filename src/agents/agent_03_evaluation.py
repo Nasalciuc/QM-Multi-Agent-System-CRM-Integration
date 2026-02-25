@@ -28,6 +28,46 @@ from error_codes import ErrorCode
 
 logger = logging.getLogger("qa_system.agents")
 
+# P2-FIX-2: Content-based follow-up detection signals.
+# Checked against the first 1000 chars (lowercased) of the transcript.
+_FOLLOWUP_SIGNALS = [
+    "it's me again",
+    "i'm calling you back",
+    "calling you back",
+    "we spoke earlier",
+    "we spoke before",
+    "we spoke yesterday",
+    "we spoke last",
+    "we talked earlier",
+    "we talked before",
+    "we talked yesterday",
+    "we talked last",
+    "sorry i missed",
+    "returning your call",
+    "following up",
+    "as we discussed",
+    "as i mentioned",
+    "i called earlier",
+    "i called before",
+    "i called yesterday",
+    "you called me",
+    "you left a message",
+    "per our conversation",
+    "continuing our conversation",
+    "further to our call",
+]
+
+# P4-FIX-4: Words that intro-patterns may capture but are NOT agent names.
+# Gerunds (-ing words > 3 chars) are also filtered automatically.
+_AGENT_NAME_STOPLIST = frozenset({
+    "calling", "leaving", "working", "looking", "going", "trying",
+    "speaking", "reaching", "getting", "checking", "helping",
+    "here", "there", "just", "also", "actually", "basically",
+    "someone", "anyone", "everyone", "nobody",
+    "sure", "glad", "happy", "sorry",
+    "the", "this", "that", "what",
+})
+
 # CRIT-03: Minimum transcript requirements to avoid wasting LLM tokens
 MIN_TRANSCRIPT_WORDS = 50        # Skip if fewer than 50 words
 MIN_TRANSCRIPT_CHARS = 200       # Skip if fewer than 200 characters
@@ -112,16 +152,22 @@ class QualityManagementAgent:
         self,
         filename: str,
         metadata: Optional[Dict] = None,
+        transcript: Optional[str] = None,
     ) -> Tuple[bool, str]:
         """Detect if call is first or follow-up.
 
         HIGH-NEW-5: Checks metadata first (CRM flight request
         status, call result field), then falls back to filename heuristic.
 
+        P2-FIX-2: If metadata and filename both say "First Call", checks
+        transcript content for follow-up signals (calling back, spoken
+        before, etc.) in the first 1000 chars.
+
         Args:
             filename: Audio filename (used as fallback heuristic).
             metadata: Optional call record dict with 'direction', 'result',
                       'flight_request_status', 'agent_name', etc.
+            transcript: Optional transcript text for content-based detection.
 
         Returns:
             (is_followup, call_type_label)
@@ -147,8 +193,21 @@ class QualityManagementAgent:
         filename_lower = filename.lower()
         follow_up_indicators = ["2nd", "second", "follow", "follow-up", "followup"]
         is_followup = any(indicator in filename_lower for indicator in follow_up_indicators)
-        call_type = "Follow-up Call" if is_followup else "First Call"
-        return is_followup, call_type
+        if is_followup:
+            return True, "Follow-up Call"
+
+        # P2-FIX-2: Priority 3 — content-based transcript analysis
+        if transcript:
+            snippet = transcript[:1000].lower()
+            for signal in _FOLLOWUP_SIGNALS:
+                if signal in snippet:
+                    logger.info(
+                        f"P2-FIX-2: Follow-up detected by transcript signal "
+                        f"'{signal}' in {safe_log_filename(filename)}"
+                    )
+                    return True, "Follow-up Call"
+
+        return False, "First Call"
 
     @staticmethod
     def detect_agents_in_transcript(cleaned_transcript: str) -> List[str]:
@@ -156,6 +215,9 @@ class QualityManagementAgent:
 
         Scans Agent:-labeled lines for "my name is X", "this is X calling/from",
         etc. Returns list of distinct agent names found.
+
+        P4-FIX-4: Filters out gerunds (-ing words) and common false-positive
+        words that match intro patterns but aren't real agent names.
         """
         intro_patterns = [
             re.compile(r"\bmy name is (\w+)", re.IGNORECASE),
@@ -171,8 +233,14 @@ class QualityManagementAgent:
                 m = pattern.search(line)
                 if m:
                     name = m.group(1).capitalize()
-                    if name.lower() not in seen:
-                        seen.add(name.lower())
+                    name_lower = name.lower()
+                    # P4-FIX-4: Filter gerunds and stoplist words
+                    if name_lower in _AGENT_NAME_STOPLIST:
+                        continue
+                    if name_lower.endswith("ing") and len(name_lower) > 3:
+                        continue
+                    if name_lower not in seen:
+                        seen.add(name_lower)
                         agents.append(name)
         return agents
 
@@ -205,7 +273,7 @@ class QualityManagementAgent:
                 f"{char_count} chars (min: {MIN_TRANSCRIPT_WORDS} words / "
                 f"{MIN_TRANSCRIPT_CHARS} chars). File: {safe_log_filename(filename)}"
             )
-            _, call_type = self.detect_call_type(filename, metadata)
+            _, call_type = self.detect_call_type(filename, metadata, transcript=transcript)
             return {
                 "error": f"Transcript too short ({word_count} words)",
                 "error_code": ErrorCode.TRANSCRIPT_TOO_SHORT,
@@ -220,7 +288,7 @@ class QualityManagementAgent:
                 "critical_gaps": [],
             }
 
-        is_followup, call_type = self.detect_call_type(filename, metadata)
+        is_followup, call_type = self.detect_call_type(filename, metadata, transcript=transcript)
 
         # 1. Clean transcript (normalize speaker labels)
         # MED-11: Use direction from CRM metadata when available

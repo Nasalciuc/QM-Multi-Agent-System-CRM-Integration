@@ -192,6 +192,62 @@ class TestCallTypeDetection:
         is_followup, call_type = agent.detect_call_type("followup_call.mp3", metadata=None)
         assert is_followup
 
+    # --- P2-FIX-2: Content-based follow-up detection ---
+
+    def test_transcript_followup_we_spoke_earlier(self, agent):
+        """P2-FIX-2: 'we spoke earlier' in transcript → follow-up."""
+        transcript = "Agent: Hi, we spoke earlier about your flight options."
+        is_followup, call_type = agent.detect_call_type(
+            "recording_20250225.mp3", transcript=transcript,
+        )
+        assert is_followup
+        assert call_type == "Follow-up Call"
+
+    def test_transcript_followup_calling_you_back(self, agent):
+        """P2-FIX-2: 'calling you back' → follow-up."""
+        transcript = "Agent: Hi, I'm calling you back about the fares we discussed."
+        is_followup, call_type = agent.detect_call_type(
+            "3394527911008.mp3", transcript=transcript,
+        )
+        assert is_followup
+        assert call_type == "Follow-up Call"
+
+    def test_transcript_followup_its_me_again(self, agent):
+        """P2-FIX-2: 'it's me again' → follow-up."""
+        transcript = "Agent: Hi, it's me again from Buy Business Travel."
+        is_followup, call_type = agent.detect_call_type(
+            "normal_id.mp3", transcript=transcript,
+        )
+        assert is_followup
+
+    def test_transcript_no_followup_signals(self, agent):
+        """P2-FIX-2: Normal first-call transcript stays First Call."""
+        transcript = "Agent: Hi, my name is Sarah calling from Buy Business Travel."
+        is_followup, call_type = agent.detect_call_type(
+            "normal_call.mp3", transcript=transcript,
+        )
+        assert not is_followup
+        assert call_type == "First Call"
+
+    def test_transcript_followup_metadata_overrides(self, agent):
+        """P2-FIX-2: Metadata takes priority over transcript content."""
+        transcript = "Agent: Hello, how are you?"
+        is_followup, call_type = agent.detect_call_type(
+            "normal.mp3",
+            metadata={"result": "follow-up"},
+            transcript=transcript,
+        )
+        assert is_followup
+
+    def test_transcript_followup_only_first_1000_chars(self, agent):
+        """P2-FIX-2: Signal beyond 1000 chars is ignored."""
+        padding = "Agent: This is just filler text for the call. " * 30  # ~1350 chars
+        transcript = padding + "Agent: we spoke earlier about this."
+        is_followup, call_type = agent.detect_call_type(
+            "normal.mp3", transcript=transcript,
+        )
+        assert not is_followup  # signal is beyond 1000 chars
+
 
 # --- Tests: Score Calculation ---
 
@@ -294,6 +350,130 @@ class TestCallTypeFiltering:
                     if v["call_applicability"] in ("second_only", "both"))
         # 4 opening + 5 presentation + 4 certainty + 3 objection + 4 closing + 8 communication = 28
         assert count == 28
+
+
+# --- Tests: P4-FIX-4 — MULTI_AGENT False Positive Filtering ---
+
+class TestAgentDetectionFiltering:
+
+    def test_real_agent_names_detected(self, agent):
+        """REAL-02: Real agent names should still be detected."""
+        transcript = (
+            "Agent: Hi, my name is Sarah calling from Buy Business Travel.\n"
+            "Client: Hello Sarah.\n"
+        )
+        agents = agent.detect_agents_in_transcript(transcript)
+        assert agents == ["Sarah"]
+
+    def test_two_real_agents_detected(self, agent):
+        """REAL-02: Two different agent names → multi-agent flag."""
+        transcript = (
+            "Agent: Hi, my name is Sarah calling from Buy Business Travel.\n"
+            "Client: Hello!\n"
+            "Agent: Actually this is John from the sales team, Sarah transferred you.\n"
+        )
+        agents = agent.detect_agents_in_transcript(transcript)
+        assert len(agents) == 2
+        assert "Sarah" in agents
+        assert "John" in agents
+
+    def test_gerund_filtered_calling(self, agent):
+        """P4-FIX-4: 'Calling' captured by 'this is X calling from' should be filtered."""
+        transcript = (
+            "Agent: This is calling from the office.\n"
+            "Client: Who is this?\n"
+        )
+        agents = agent.detect_agents_in_transcript(transcript)
+        assert "Calling" not in agents
+        assert len(agents) == 0
+
+    def test_gerund_filtered_leaving(self, agent):
+        """P4-FIX-4: 'Leaving' should be filtered as gerund."""
+        transcript = "Agent: I'm leaving from the main office building.\n"
+        agents = agent.detect_agents_in_transcript(transcript)
+        assert "Leaving" not in agents
+
+    def test_gerund_filtered_working(self, agent):
+        """P4-FIX-4: 'Working' should be filtered as gerund."""
+        transcript = "Agent: I'm working with the premium team.\n"
+        agents = agent.detect_agents_in_transcript(transcript)
+        assert "Working" not in agents
+
+    def test_stoplist_words_filtered(self, agent):
+        """P4-FIX-4: Stoplist words should be filtered."""
+        transcript = (
+            "Agent: This is just from the travel desk.\n"
+            "Agent: My name is someone.\n"
+        )
+        agents = agent.detect_agents_in_transcript(transcript)
+        assert "Just" not in agents
+        assert "Someone" not in agents
+        assert len(agents) == 0
+
+    def test_real_name_not_filtered(self, agent):
+        """P4-FIX-4: Real names that happen to end in 'ing' (e.g. 'Ming') 
+        — short -ing words (<=3 chars) pass through. 'Ming' is 4 chars so
+        it gets filtered. This is an acceptable trade-off."""
+        transcript = "Agent: Hi, my name is Alex calling from Buy Business.\n"
+        agents = agent.detect_agents_in_transcript(transcript)
+        assert "Alex" in agents
+
+
+# --- Tests: P6-FIX-6 — Cache Invalidation Verification ---
+
+class TestCacheKeyInvalidation:
+
+    def test_cache_key_includes_call_type(self):
+        """P6-FIX-6: Different call_type → different cache key."""
+        from inference.inference_engine import InferenceEngine
+        key1 = InferenceEngine._cache_key(
+            "transcript", "First Call", 28, model="gpt-4o",
+            criteria_hash="abc", prompt_hash="xyz",
+        )
+        key2 = InferenceEngine._cache_key(
+            "transcript", "Follow-up Call", 28, model="gpt-4o",
+            criteria_hash="abc", prompt_hash="xyz",
+        )
+        assert key1 != key2
+
+    def test_cache_key_includes_criteria_hash(self):
+        """P6-FIX-6: Different criteria_hash → different cache key."""
+        from inference.inference_engine import InferenceEngine
+        key1 = InferenceEngine._cache_key(
+            "transcript", "First Call", 28, model="gpt-4o",
+            criteria_hash="abc123", prompt_hash="xyz",
+        )
+        key2 = InferenceEngine._cache_key(
+            "transcript", "First Call", 28, model="gpt-4o",
+            criteria_hash="def456", prompt_hash="xyz",
+        )
+        assert key1 != key2
+
+    def test_cache_key_includes_prompt_hash(self):
+        """P6-FIX-6: Different prompt_hash → different cache key."""
+        from inference.inference_engine import InferenceEngine
+        key1 = InferenceEngine._cache_key(
+            "transcript", "First Call", 28, model="gpt-4o",
+            criteria_hash="abc", prompt_hash="xyz111",
+        )
+        key2 = InferenceEngine._cache_key(
+            "transcript", "First Call", 28, model="gpt-4o",
+            criteria_hash="abc", prompt_hash="xyz222",
+        )
+        assert key1 != key2
+
+    def test_cache_key_same_inputs_same_key(self):
+        """P6-FIX-6: Identical inputs → identical cache key (deterministic)."""
+        from inference.inference_engine import InferenceEngine
+        key1 = InferenceEngine._cache_key(
+            "transcript", "First Call", 28, model="gpt-4o",
+            criteria_hash="abc", prompt_hash="xyz",
+        )
+        key2 = InferenceEngine._cache_key(
+            "transcript", "First Call", 28, model="gpt-4o",
+            criteria_hash="abc", prompt_hash="xyz",
+        )
+        assert key1 == key2
 
 
 # --- Tests: Listening Ratio ---

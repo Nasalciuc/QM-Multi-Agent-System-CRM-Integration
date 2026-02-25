@@ -655,3 +655,49 @@ class TestSilenceAnalysis:
             t += 2.0  # 2s gap between each (> 1s threshold)
         stats = ElevenLabsSTTAgent._analyze_silence(words)
         assert len(stats["gap_locations"]) <= 20
+
+    def test_gap_locations_sorted_by_duration_descending(self):
+        """P5-FIX-5: gap_locations should be sorted by duration descending,
+        so the top-20 are the longest gaps, not the first 20 chronologically."""
+        words = []
+        t = 0.0
+        # Create 25 gaps with varying durations:
+        # gap 0: 2s, gap 1: 3s, ... gap 24: 26s
+        for i in range(26):
+            words.append(("word", "s0", "word", t))
+            gap_seconds = 2.0 + i  # increasing gap durations
+            t += gap_seconds
+        stats = ElevenLabsSTTAgent._analyze_silence(words)
+        locations = stats["gap_locations"]
+        assert len(locations) == 20
+        # First entry should be the longest gap
+        durations = [g["duration_ms"] for g in locations]
+        assert durations == sorted(durations, reverse=True)
+        # The longest gap (last chronologically, 26s) should be first
+        assert durations[0] >= 25000
+
+    def test_gap_locations_all_returned_when_under_20(self):
+        """P5-FIX-5: When fewer than 20 gaps, all should be returned sorted."""
+        words = [
+            ("hi", "s0", "word", 0.0),
+            ("there", "s0", "word", 5.0),   # 5s gap
+            ("ok", "s0", "word", 7.0),      # 2s gap
+            ("bye", "s0", "word", 20.0),    # 13s gap
+        ]
+        stats = ElevenLabsSTTAgent._analyze_silence(words)
+        assert len(stats["gap_locations"]) == 3
+        durations = [g["duration_ms"] for g in stats["gap_locations"]]
+        assert durations[0] >= durations[1] >= durations[2]
+
+    def test_reconstruct_silence_stats_from_text(self):
+        """P3-FIX-3: Reconstructed stats should have zero values and _reconstructed flag."""
+        stats = ElevenLabsSTTAgent._reconstruct_silence_stats_from_text(
+            "Speaker 0: Hello\nSpeaker 1: Hi there"
+        )
+        assert stats["silence_pct"] == 0.0
+        assert stats["longest_gap_ms"] == 0
+        assert stats["num_gaps_over_30s"] == 0
+        assert stats["total_silence_ms"] == 0
+        assert stats["num_gaps"] == 0
+        assert stats["gap_locations"] == []
+        assert stats["_reconstructed"] is True

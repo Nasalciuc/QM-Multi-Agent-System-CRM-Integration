@@ -101,6 +101,28 @@ class TestSaveLoad:
         assert loaded["text"] == sample_transcript["text"]
         assert loaded["raw_text"] == sample_transcript["raw_text"]
 
+    def test_save_and_load_with_silence_stats(self, cache, audio_file, sample_transcript):
+        """P3-FIX-3: silence_stats should survive cache round-trip."""
+        key = STTCache.cache_key(audio_file)
+        data_with_silence = {
+            **sample_transcript,
+            "silence_stats": {
+                "silence_pct": 15.3,
+                "longest_gap_ms": 45000,
+                "num_gaps_over_30s": 1,
+                "total_silence_ms": 60000,
+                "num_gaps": 5,
+                "gap_locations": [{"start_s": 10.0, "end_s": 55.0, "duration_ms": 45000}],
+            },
+        }
+        cache.save(key, data_with_silence)
+        loaded = cache.load(key)
+        assert loaded is not None
+        assert "silence_stats" in loaded
+        assert loaded["silence_stats"]["silence_pct"] == 15.3
+        assert loaded["silence_stats"]["longest_gap_ms"] == 45000
+        assert len(loaded["silence_stats"]["gap_locations"]) == 1
+
     def test_load_miss(self, cache):
         result = cache.load("nonexistent_key")
         assert result is None

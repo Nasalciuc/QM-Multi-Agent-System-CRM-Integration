@@ -534,7 +534,33 @@ class ElevenLabsSTTAgent:
             "num_gaps_over_30s": sum(1 for g in gaps if g["duration_ms"] >= 30000),
             "total_silence_ms": round(total_silence_ms),
             "num_gaps": len(gaps),
-            "gap_locations": gaps[:20],  # Cap at 20 to avoid bloating metadata
+            # P5-FIX-5: Sort by duration descending so the top-20 are the
+            # longest gaps, not just the first 20 chronologically.
+            "gap_locations": sorted(
+                gaps, key=lambda g: g["duration_ms"], reverse=True
+            )[:20],
+        }
+
+    @staticmethod
+    def _reconstruct_silence_stats_from_text(transcript_text: str) -> dict:
+        """P3-FIX-3: Approximate silence_stats for legacy cache entries.
+
+        When a cached transcription doesn't have silence_stats (cached before
+        FIX-3), we provide a minimal stub so downstream code doesn't crash.
+        Without word-level timestamps we cannot compute real gaps, so we
+        return safe zero-values and flag the source.
+
+        Returns:
+            Dict compatible with _analyze_silence() output.
+        """
+        return {
+            "silence_pct": 0.0,
+            "longest_gap_ms": 0,
+            "num_gaps_over_30s": 0,
+            "total_silence_ms": 0,
+            "num_gaps": 0,
+            "gap_locations": [],
+            "_reconstructed": True,
         }
 
     def _save_transcript(self, filename: str, transcript: str) -> Optional[Path]:
@@ -619,6 +645,14 @@ class ElevenLabsSTTAgent:
                     "cached": True,
                     "transcript_path": str(saved_path) if saved_path else None,
                 }
+                # P3-FIX-3: Restore silence_stats from cache if available,
+                # otherwise reconstruct approximate stats from transcript text.
+                if "silence_stats" in cached:
+                    transcripts[filename]["silence_stats"] = cached["silence_stats"]
+                else:
+                    transcripts[filename]["silence_stats"] = (
+                        self._reconstruct_silence_stats_from_text(transcript_text)
+                    )
                 logger.info(f"  CACHED: {safe_log_filename(filename)} (skipped API call, saved ${estimated_cost:.4f})")
                 continue
             # ── End cache check ──────────────────────────────────────
@@ -635,13 +669,17 @@ class ElevenLabsSTTAgent:
                 saved_path = self._save_transcript(filename, transcript_text)
 
                 # ── Save to STT cache ────────────────────────────────
-                self._stt_cache.save(cache_key, {
+                cache_data = {
                     "text": transcript_text,
                     "raw_text": result.get("raw_text", transcript_text),
                     "speakers_detected": result.get("speakers_detected", 0),
                     "diarized": result.get("diarized", False),
                     "language_code": result.get("language_code"),
-                })
+                }
+                # P3-FIX-3: Persist silence_stats so cache hits get them too
+                if "silence_stats" in result:
+                    cache_data["silence_stats"] = result["silence_stats"]
+                self._stt_cache.save(cache_key, cache_data)
                 # ── End cache save ───────────────────────────────────
 
                 transcripts[filename] = {
