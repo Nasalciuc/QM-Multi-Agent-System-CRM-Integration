@@ -189,7 +189,7 @@ class PIIRedactor:
         redact_intl_phone: bool = True,
         redact_loyalty: bool = True,
         redact_nato_spelled: bool = True,
-        redact_multiline_phone: bool = True,
+        redact_multiline_phone: bool = False,
         redact_prices: bool = False,
     ):
         self.redact_phones = redact_phones
@@ -301,6 +301,9 @@ class PIIRedactor:
         if self.redact_prices:
             text, n = self._redact_prices(text)
             counts["price"] = n
+
+        # B3-FIX-3: Ensure redaction tags don't concatenate with following text
+        text = re.sub(r'\]([A-Za-z])', '] \\1', text)
 
         total = sum(counts.values())
         if total > 0:

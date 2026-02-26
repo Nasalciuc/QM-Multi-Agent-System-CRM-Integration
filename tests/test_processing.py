@@ -600,3 +600,144 @@ class TestPIIInternationalPatterns:
         result = redactor.redact("Please press 1 for sales or enter code 4523")
         assert "1" in result["text"]
         assert "4523" in result["text"]
+
+
+# ═══════════════════════════════════════════════════════════════════
+# B3-FIX-1: Multiline Phone False Positive Prevention
+# ═══════════════════════════════════════════════════════════════════
+
+class TestB3Fix1MultilinePhoneFalsePositives:
+    """B3-FIX-1: Travel sales patterns must NOT be redacted as phone numbers.
+
+    Production evidence: 538 false [PHONE] tags across 20 calls.
+    Root cause: _redact_multiline_spoken_phone() flags digit-words
+    like 'one', 'two', 'five', 'seven' which appear constantly in
+    fare pricing, stop counts, flight times, and baggage discussions.
+    """
+
+    def test_multiline_phone_defaults_to_false(self):
+        """After B3-FIX-1, multiline phone detection is OFF by default."""
+        redactor = PIIRedactor()
+        assert redactor.redact_multiline_phone is False
+
+    def test_multiline_phone_can_be_enabled(self):
+        """Multiline phone CAN still be enabled via constructor parameter."""
+        redactor = PIIRedactor(redact_multiline_phone=True)
+        assert redactor.redact_multiline_phone is True
+
+    def test_pricing_not_redacted(self):
+        """Fare discussions must NOT produce [PHONE] tags."""
+        redactor = PIIRedactor()
+        text = (
+            "Agent: The market rate is thirty-five, thirty-six hundred.\n"
+            "Client: Okay.\n"
+            "Agent: But the deal I found is twenty-seven hundred per passenger.\n"
+            "Client: For two passengers?\n"
+            "Agent: Yes, so fifty-four hundred total for two.\n"
+        )
+        result = redactor.redact(text)
+        assert "[PHONE]" not in result["text"]
+        assert "thirty-five" in result["text"]
+        assert "twenty-seven" in result["text"]
+
+    def test_stops_not_redacted(self):
+        """Stop counts and routing must NOT produce [PHONE] tags."""
+        redactor = PIIRedactor()
+        text = (
+            "Agent: If we take two stops, it becomes about three thousand.\n"
+            "Agent: One stop would be one in the US and the other one in London.\n"
+            "Client: How about nonstop?\n"
+            "Agent: Nonstop is five thousand eight hundred.\n"
+        )
+        result = redactor.redact(text)
+        assert "[PHONE]" not in result["text"]
+        assert "two stops" in result["text"]
+
+    def test_flight_times_not_redacted(self):
+        """Flight times must NOT produce [PHONE] tags."""
+        redactor = PIIRedactor()
+        text = (
+            "Agent: Departure is at four PM, four oh five PM to be exact.\n"
+            "Agent: It has just one stop in Frankfurt.\n"
+            "Agent: Arriving Barcelona at eleven fifty-five AM the next day.\n"
+        )
+        result = redactor.redact(text)
+        assert "[PHONE]" not in result["text"]
+
+    def test_baggage_not_redacted(self):
+        """Baggage counts must NOT produce [PHONE] tags."""
+        redactor = PIIRedactor()
+        text = (
+            "Agent: You get two checked bags, each seventy pounds.\n"
+            "Agent: Plus one carry-on and one personal item.\n"
+        )
+        result = redactor.redact(text)
+        assert "[PHONE]" not in result["text"]
+        assert "two checked bags" in result["text"]
+
+    def test_give_me_one_moment_not_redacted(self):
+        """Common phrases with digit words must NOT produce [PHONE] tags."""
+        redactor = PIIRedactor()
+        text = (
+            "Agent: Just give me one moment.\n"
+            "Agent: Give me one second to check on that.\n"
+            "Agent: Bear with me for just two minutes, please.\n"
+        )
+        result = redactor.redact(text)
+        assert "[PHONE]" not in result["text"]
+        assert "one moment" in result["text"]
+
+    def test_real_phone_still_caught_single_line(self):
+        """Real phone numbers on a single line must STILL be redacted."""
+        redactor = PIIRedactor()
+        text = "Agent: My direct number is 708-323-2815.\n"
+        result = redactor.redact(text)
+        assert "[PHONE]" in result["text"]
+        assert "708" not in result["text"]
+
+    def test_real_spelled_phone_still_caught(self):
+        """Spelled-out phone (6+ digit words on one line) must STILL be caught."""
+        redactor = PIIRedactor()
+        text = "Client: My number is five five five one two three four five six seven.\n"
+        result = redactor.redact(text)
+        assert "[SPELLED_PII]" in result["text"] or "[PHONE]" in result["text"]
+
+
+# ═══════════════════════════════════════════════════════════════════
+# B3-FIX-3: Redaction Tag Concatenation Prevention
+# ═══════════════════════════════════════════════════════════════════
+
+class TestB3Fix3TagConcatenation:
+    """B3-FIX-3: Redaction tags must have space before following text.
+
+    Production evidence: '[SPELLED_PII]Veer Campbell' — tag directly
+    concatenated with the customer name in exported evaluation.
+    """
+
+    def test_no_tag_letter_concatenation(self):
+        """Redaction tags followed by letters must have a space."""
+        redactor = PIIRedactor()
+        # Force a phone number right before a word with no space
+        text = "Call 555-123-4567immediately please"
+        result = redactor.redact(text)
+        # The regex ]([A-Za-z]) → ] \1 should fix this
+        import re
+        # No ] immediately followed by a letter
+        assert not re.search(r'\\][A-Za-z]', result["text"]), \
+            f"Tag concatenation found in: {result['text']}"
+
+    def test_tag_space_after_phone(self):
+        """[PHONE] followed by text should have a space."""
+        redactor = PIIRedactor()
+        text = "Number: 555-123-4567is my cell"
+        result = redactor.redact(text)
+        assert "] is" in result["text"] or "]  " in result["text"] or "[PHONE] is" in result["text"]
+
+    def test_tag_space_preserves_existing_spaces(self):
+        """Existing spaces after tags should not be doubled."""
+        redactor = PIIRedactor()
+        text = "Call me at 555-123-4567 anytime"
+        result = redactor.redact(text)
+        assert "[PHONE] anytime" in result["text"]
+        # Should NOT have double space
+        assert "[PHONE]  anytime" not in result["text"]

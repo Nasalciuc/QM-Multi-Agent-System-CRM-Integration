@@ -216,7 +216,7 @@ class TestReal05MultiLinePhone:
     """REAL-05: Phone numbers spoken across multiple lines by same speaker."""
 
     def test_seven_digits_across_lines(self):
-        redactor = PIIRedactor()
+        redactor = PIIRedactor(redact_multiline_phone=True)
         text = (
             "Agent: What's your number?\n"
             "Client: five five five\n"

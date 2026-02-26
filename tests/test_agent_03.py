@@ -293,6 +293,79 @@ class TestCallTypeDetection:
         # Signal is within 1000 chars so it WILL trigger. Documents the limitation.
         assert call_type in ("First Call", "Follow-up Call")
 
+    # --- B3-FIX-2: Travel sales follow-up signal expansion ---
+
+    def test_i_looked_into_is_followup(self, agent):
+        """B3-FIX-2: 'I looked into' triggers follow-up detection.
+        Production: 3260347129008.mp3 (Angelo/Alan) misclassified as First Call."""
+        transcript = (
+            "Client: This call is being recorded.\n"
+            "Agent: Hi, Angelo.\n"
+            "Client: Hey, Alan. How are you?\n"
+            "Agent: I'm good. Uh, so Angelo, I looked into the nonstop flights from Miami.\n"
+        )
+        is_followup, call_type = agent.detect_call_type(
+            "3260347129008.mp3", transcript=transcript,
+        )
+        assert is_followup
+        assert call_type == "Follow-up Call"
+
+    def test_i_looked_into_couple_options_is_followup(self, agent):
+        """B3-FIX-2: 'I looked into a couple of options' triggers follow-up.
+        Production: 3416422455008.mp3 (Frederick/Alex) misclassified."""
+        transcript = (
+            "Client: Yes, hello?\n"
+            "Agent: Hi, Frederick, uh, Alex line.\n"
+            "Client: Hi.\n"
+            "Agent: So I looked into a couple of options for your trip.\n"
+        )
+        is_followup, call_type = agent.detect_call_type(
+            "3416422455008.mp3", transcript=transcript,
+        )
+        assert is_followup
+        assert call_type == "Follow-up Call"
+
+    def test_here_are_the_options_is_followup(self, agent):
+        """B3-FIX-2: 'Here are the options' triggers follow-up."""
+        transcript = "Agent: Hi Sarah, here are the options I found for your Barcelona trip.\n"
+        is_followup, call_type = agent.detect_call_type(
+            "recording.mp3", transcript=transcript,
+        )
+        assert is_followup
+        assert call_type == "Follow-up Call"
+
+    def test_as_promised_is_followup(self, agent):
+        """B3-FIX-2: 'As promised' triggers follow-up."""
+        transcript = "Agent: Hi, as promised, I have the flight details ready for you.\n"
+        is_followup, call_type = agent.detect_call_type(
+            "recording.mp3", transcript=transcript,
+        )
+        assert is_followup
+        assert call_type == "Follow-up Call"
+
+    def test_i_got_the_prices_is_followup(self, agent):
+        """B3-FIX-2: 'I got the prices' triggers follow-up."""
+        transcript = "Agent: Hey Mike, I got the prices back for those flights to London.\n"
+        is_followup, call_type = agent.detect_call_type(
+            "recording.mp3", transcript=transcript,
+        )
+        assert is_followup
+        assert call_type == "Follow-up Call"
+
+    def test_existing_signals_still_work(self, agent):
+        """B3-FIX-2: Existing signals must NOT be broken by the new additions."""
+        transcript = "Agent: Hi, it's me again from Buy Business Travel.\n"
+        is_followup, _ = agent.detect_call_type("test.mp3", transcript=transcript)
+        assert is_followup
+
+        transcript2 = "Agent: Hi, calling you back about the fares.\n"
+        is_followup2, _ = agent.detect_call_type("test.mp3", transcript=transcript2)
+        assert is_followup2
+
+        transcript3 = "Agent: Hi, sorry I missed your call earlier.\n"
+        is_followup3, _ = agent.detect_call_type("test.mp3", transcript=transcript3)
+        assert is_followup3
+
 
 # --- Tests: Score Calculation ---
 

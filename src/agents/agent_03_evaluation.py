@@ -55,6 +55,18 @@ _FOLLOWUP_SIGNALS = [
     "per our conversation",
     "continuing our conversation",
     "further to our call",
+    # B3-FIX-2: Travel sales follow-up signals (from production Batch 3)
+    "i looked into",
+    "i checked the",
+    "i checked a couple",
+    "i found some",
+    "i got the prices",
+    "i got some options",
+    "here are the options",
+    "here are the deals",
+    "i was working on",
+    "i've been working on",
+    "as promised",
 ]
 
 # P4-FIX-4: Words that intro-patterns may capture but are NOT agent names.
@@ -345,8 +357,9 @@ class QualityManagementAgent:
         evaluation["is_followup"] = is_followup
         if truncated:
             evaluation["truncated"] = True
-        if redaction["total_redactions"] > 0:
-            evaluation["pii_redacted"] = redaction["pii_found"]
+        # B3-FIX-4: Always store PII redaction info (even when count is 0)
+        evaluation["pii_redacted"] = redaction["pii_found"]
+        evaluation["pii_total_redactions"] = redaction["total_redactions"]
 
         # REAL-02: Multi-agent detection
         agents_detected = self.detect_agents_in_transcript(cleaned)
