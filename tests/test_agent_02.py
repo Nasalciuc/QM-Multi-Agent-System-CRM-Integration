@@ -602,6 +602,7 @@ class TestPreprocessAudio:
         )
         preprocessed, stats = agent._preprocess_audio(audio_path)
         assert preprocessed is not None
+        assert stats is not None
         assert stats["action"] == "preprocessed"
         # Should trim ~20s of edge silence, leaving ~3s (2s tone + 1s padding)
         assert stats["processed_duration_ms"] < 5000
@@ -636,9 +637,11 @@ class TestPreprocessAudio:
         # The 90s hold is INTERNAL — must be preserved
         # No edge silence to trim, so no change expected
         if preprocessed is None:
+            assert stats is not None
             assert stats["action"] == "no_change"
         else:
             # Even if some small edge trim, hold must remain
+            assert stats is not None
             assert stats["processed_duration_ms"] > 90000
 
         if preprocessed and preprocessed.exists():

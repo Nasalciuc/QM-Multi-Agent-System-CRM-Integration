@@ -57,7 +57,7 @@ class STTCache:
 
     def __init__(
         self,
-        cache_dir: str = "data/stt_cache",
+        cache_dir: Optional[str] = "data/stt_cache",
         enable: bool = True,
         ttl_seconds: int = DEFAULT_STT_CACHE_TTL_SECONDS,
         max_entries: int = 0,  # MED-14: 0 = unlimited
