@@ -432,3 +432,52 @@ class TestExportSanitization:
         results = pipeline.run_local([Path("call1.mp3")])
         # In-memory results should still have transcript
         assert any("transcript" in r for r in results)
+
+    # --- AUD-07: Pipeline integrity tests ---
+
+    def test_pii_redacted_transcript_forwarded(self, mock_agents):
+        """AUD-07: transcript_redacted from Agent 03 evaluation must appear in results."""
+        a1, a2, a3, a4 = mock_agents
+        redacted_text = "Agent: Hello [NAME]. Client: My number is [PHONE]."
+        # Pipeline pulls transcript_redacted from Agent 03's evaluate_call return value
+        a3.evaluate_call.return_value = {
+            "criteria": {"greeting": {"score": "YES", "evidence": "ok"}},
+            "overall_assessment": "Good",
+            "strengths": [],
+            "improvements": [],
+            "call_type": "First Call",
+            "model_used": "gpt-4o",
+            "provider_used": "openrouter",
+            "cost_usd": 0.03,
+            "transcript_redacted": redacted_text,
+        }
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+        results = pipeline.run_local([Path("call1.mp3")])
+        # transcript_redacted should be in the pipeline output
+        assert any(r.get("transcript_redacted") == redacted_text for r in results), \
+            "transcript_redacted not preserved from Agent 03 evaluation into pipeline results"
+
+    @pytest.mark.xfail(reason="pii_total_redactions not yet forwarded through pipeline", strict=False)
+    def test_pii_total_redactions_in_evaluation(self, mock_agents):
+        """AUD-07: pii_total_redactions should be preserved through pipeline.
+
+        Currently the pipeline does not include pii_total_redactions in the
+        evaluation output dict. This xfail test monitors when it gets added.
+        """
+        a1, a2, a3, a4 = mock_agents
+        a3.evaluate_call.return_value = {
+            "criteria": {"greeting": {"score": "YES", "evidence": "ok"}},
+            "overall_assessment": "Good",
+            "strengths": [],
+            "improvements": [],
+            "call_type": "First Call",
+            "model_used": "gpt-4o",
+            "provider_used": "openrouter",
+            "cost_usd": 0.03,
+            "pii_total_redactions": 5,
+        }
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+        results = pipeline.run_local([Path("call1.mp3")])
+        # pii_total_redactions should be in results
+        assert any(r.get("pii_total_redactions") == 5 for r in results), \
+            "pii_total_redactions lost during pipeline processing"

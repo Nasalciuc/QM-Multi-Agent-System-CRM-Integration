@@ -61,6 +61,41 @@ _IVR_PATTERNS = [
     re.compile(r"\byour call is important\b", re.IGNORECASE),
 ]
 
+# AUD-01: Company name strings for BBC agent detection.
+# When a speaker mentions the company AND shows agent behavior, they are the agent.
+# This OVERRIDES "my name is" on other speakers (fixes 3309622803008 inversion).
+_COMPANY_NAMES = [
+    "business class",
+    "buy business",
+    "buybusinessclass",
+    "buybusiness class",
+]
+
+# AUD-01: Agent behavior signals — used WITH company name for high-confidence detection.
+# Also used standalone as additional inbound-agent indicators.
+_AGENT_BEHAVIOR_PATTERNS = [
+    re.compile(r"\bhow (?:can|may) I (?:help|assist)\b", re.IGNORECASE),
+    re.compile(r"\bwhat can I (?:do|help)\b", re.IGNORECASE),
+    re.compile(r"\byou (?:are|'re) (?:talking|speaking) (?:to|with)\b", re.IGNORECASE),
+    re.compile(r"\bhave you ever contacted\b", re.IGNORECASE),
+    re.compile(r"\bbefore we proceed\b", re.IGNORECASE),
+    re.compile(r"\bmay I (?:have|know|get) your\b", re.IGNORECASE),
+    re.compile(r"\bI(?:'ll| will) help you\b", re.IGNORECASE),
+    re.compile(r"\blet me (?:check|find|look|pull up|search)\b", re.IGNORECASE),
+]
+
+# AUD-04: IVR content phrases — lines that are automated recordings, not real speakers.
+# These should be skipped during agent detection to avoid wasting scan budget.
+_IVR_CONTENT_PHRASES = [
+    "this call is being recorded",
+    "call may be monitored",
+    "call is being recorded",
+    "for quality assurance",
+    "for quality and training",
+    "your call is important",
+    "please hold",
+]
+
 # REAL-01 / TASK-2: Patterns that indicate a speaker is a CLIENT
 _CLIENT_ANSWER_PATTERNS = [
     # Bare "hello?" / "yes?" with question mark — client picking up the phone
@@ -192,12 +227,17 @@ class TranscriptCleaner:
         else:
             merge_map = {}
 
-        # REAL-01 / TASK-2: Determine agent_speaker using priority-ordered detection:
-        # Priority 1: Agent self-introduction patterns (highest confidence)
+        # AUD-03: Priority-ordered agent detection:
+        # Priority 0: Company name + agent behavior (highest confidence — AUD-02)
+        # Priority 1: Agent self-introduction patterns (high confidence)
         # Priority 2: Client answer patterns (medium confidence — the OTHER speaker is agent)
         # Priority 3: Direction-based position heuristic (lowest confidence)
-        agent_speaker = self._detect_agent_by_intro(lines, merge_map)
-        detection_method = "intro"
+        agent_speaker = self._detect_agent_by_company(lines, merge_map)
+        detection_method = "company"
+
+        if agent_speaker is None:
+            agent_speaker = self._detect_agent_by_intro(lines, merge_map)
+            detection_method = "intro"
 
         if agent_speaker is None:
             # TASK-2: Try client-content detection — if we find the client,
@@ -317,8 +357,75 @@ class TranscriptCleaner:
         return None
 
     @staticmethod
+    def _detect_agent_by_company(
+        lines: list, merge_map: dict, scan_lines: int = 20,
+    ) -> Optional[str]:
+        """AUD-02: Identify agent by BBC company name + agent behavior.
+
+        Priority 0 detection — runs BEFORE intro pattern detection.
+        When a speaker mentions the company name ("Business Class", "Buy Business")
+        AND shows agent behavior ("how can I help", "have you ever contacted"),
+        that speaker is definitively the agent.
+
+        This fixes the 3309622803008 inversion where the customer's
+        "my name is Matt" overrode Emma's "Thank you for calling Business Class."
+
+        Also matches company name alone if combined with inbound-agent
+        patterns (thank you for calling + company name = definitive agent).
+
+        Returns the (effective) speaker_id of the agent, or None.
+        """
+        scanned = 0
+        for line in lines:
+            match = re.match(r"^(Speaker\s*(\d+))\s*:\s*(.+)", line, re.IGNORECASE)
+            if not match:
+                continue
+            scanned += 1
+            if scanned > scan_lines:
+                break
+            speaker_id = match.group(1).lower()
+            content = match.group(3)
+            content_lower = content.lower()
+            effective = merge_map.get(speaker_id, speaker_id)
+
+            # Skip IVR lines — "This call is being recorded" is not an agent
+            if any(phrase in content_lower for phrase in _IVR_CONTENT_PHRASES):
+                continue
+
+            # Check: does this line mention a BBC company name?
+            has_company = any(name in content_lower for name in _COMPANY_NAMES)
+
+            if has_company:
+                # Company name found — check for agent behavior on SAME line
+                has_behavior = any(
+                    pattern.search(content) for pattern in _AGENT_BEHAVIOR_PATTERNS
+                )
+                # Also check for inbound agent patterns (thank you for calling)
+                has_inbound = any(
+                    pattern.search(content) for pattern in _INBOUND_AGENT_PATTERNS
+                )
+
+                if has_behavior or has_inbound:
+                    logger.info(
+                        f"AUD-02: Agent detected by company name + behavior on "
+                        f"{speaker_id}: {content[:80]!r}"
+                    )
+                    return effective
+
+                # Company name WITHOUT behavior — still strong signal, but
+                # only if another speaker does NOT also mention company name.
+                # (Avoid false positive when client says "I found Business Class online")
+                # Log and continue scanning — don't return yet.
+                logger.debug(
+                    f"AUD-02: Company name found on {speaker_id} without behavior: "
+                    f"{content[:80]!r}"
+                )
+
+        return None
+
+    @staticmethod
     def _detect_agent_by_intro(
-        lines: list, merge_map: dict, scan_lines: int = 15,
+        lines: list, merge_map: dict, scan_lines: int = 25,   # AUD-05: was 15
     ) -> Optional[str]:
         """REAL-01 + P8-FIX-1: Identify the agent by self-introduction patterns.
 
@@ -346,6 +453,17 @@ class TranscriptCleaner:
             speaker_id = match.group(1).lower()
             content = match.group(3)
             effective = merge_map.get(speaker_id, speaker_id)
+
+            # AUD-04: Skip IVR content lines — they waste scan budget
+            # and should not trigger intro patterns
+            content_lower = content.lower()
+            if any(phrase in content_lower for phrase in _IVR_CONTENT_PHRASES):
+                scanned -= 1  # Don't count IVR lines toward scan limit
+                # Still track IVR speaker for P8-FIX-1 logic below
+                if ivr_speaker is None:
+                    ivr_speaker = effective
+                    logger.debug(f"AUD-04: IVR detected on {speaker_id} (skipping for intro scan)")
+                continue
 
             # Priority 1: Standard agent intro patterns (outbound calls)
             for pattern in _AGENT_INTRO_PATTERNS:
@@ -392,7 +510,7 @@ class TranscriptCleaner:
 
     @staticmethod
     def _detect_client_by_content(
-        lines: list, merge_map: dict, scan_lines: int = 15,
+        lines: list, merge_map: dict, scan_lines: int = 25,   # AUD-05: was 15
     ) -> Optional[str]:
         """TASK-2: Identify the client by answer / inquiry patterns.
 
