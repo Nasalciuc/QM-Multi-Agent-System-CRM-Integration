@@ -1,10 +1,10 @@
 # 🎯 QM Multi Agent System — Call Center Quality Assurance
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-284%20passed-brightgreen.svg)](#tests)
+[![Tests](https://img.shields.io/badge/Tests-455%20passed-brightgreen.svg)](#tests)
 [![License](https://img.shields.io/badge/License-Private-lightgrey.svg)](#)
 
-Automated **4-agent pipeline** that evaluates call center recordings against **24 quality criteria** using LLM-powered analysis.
+Automated **4-agent pipeline** that evaluates call center recordings against **48 quality criteria** using LLM-powered analysis.
 
 ---
 
@@ -14,7 +14,7 @@ Automated **4-agent pipeline** that evaluates call center recordings against **2
 |-------|---------|------------|
 | **Agent 1** — Audio | Download / find call recordings | CRM API or local files |
 | **Agent 2** — Transcription | Speech-to-text with diarization | ElevenLabs Scribe v2 |
-| **Agent 3** — Evaluation | Score transcript against 24 QA criteria | OpenRouter / OpenAI GPT-4o |
+| **Agent 3** — Evaluation | Score transcript against 48 QA criteria | OpenRouter / OpenAI GPT-4o |
 | **Agent 4** — Export | Generate Excel, CSV, JSON reports | pandas + openpyxl |
 
 ### Pipeline Flow
@@ -23,7 +23,7 @@ Automated **4-agent pipeline** that evaluates call center recordings against **2
 ┌─────────────┐    ┌─────────────────┐    ┌───────────────┐    ┌──────────┐
 │  Agent 1    │───▶│    Agent 2      │───▶│   Agent 3     │───▶│ Agent 4  │
 │  Audio      │    │  Transcription  │    │  Evaluation   │    │ Export   │
-│  Retrieval  │    │  (ElevenLabs)   │    │  (LLM + 24   │    │ Excel/   │
+│  Retrieval  │    │  (ElevenLabs)   │    │  (LLM + 48   │    │ Excel/   │
 │             │    │                 │    │   criteria)   │    │ CSV/JSON │
 └─────────────┘    └─────────────────┘    └───────────────┘    └──────────┘
 ```
@@ -91,21 +91,33 @@ src/
 | `ANTHROPIC_API_KEY` | — | Claude fallback |
 | `WEBHOOK_URL` | — | Result notifications |
 
-## Evaluation Criteria (24 total)
+## Evaluation Criteria (48 total)
 
-| Category | Count | Examples |
-|----------|-------|---------|
-| **Phone Skills** | 5 | Greeting, caller ID, hold procedure |
-| **Sales Techniques** | 8 | Needs assessment, objection handling |
-| **Urgency & Closing** | 3 | Creating urgency, closing attempt |
-| **Soft Skills** | 8 | Active listening, empathy, professionalism |
+Grouped into 10 categories, filtered by call type (28 per call):
+
+| Category | Count | Call Type | Key Criteria |
+|----------|-------|-----------|-------------|
+| Opening | 5 | First Call | Greeting, permission check, advisor positioning |
+| Interview | 4 | First Call | Travel needs, dream outcome, buying motive |
+| Psychological Framing | 4 | First Call | Urgency, experience vs utility, scarcity |
+| First Call Closing | 7 | First Call | Research time, follow-up appointment, contact info |
+| Second Call Opening | 4 | Follow-up | Punctuality, recap, reconnection |
+| Strategic Presentation | 5 | Follow-up | Anchor/recommendation/value builder pattern |
+| Creating Certainty | 4 | Follow-up | Social proof, guarantees, trial close |
+| Objection Handling | 3 | Follow-up | Advanced objection techniques |
+| Commitment & Closing | 4 | Follow-up | Booking commitment, payment, confirmation |
+| Communication | 8 | Both | Active listening, tone, expertise, pace |
+
+Each criterion scored: **YES** (100%), **PARTIAL** (50%), **NO** (0%), **N/A** (excluded).
+First Call: 20 specific + 8 communication = 28 criteria.
+Follow-up Call: 20 specific + 8 communication = 28 criteria.
 
 Scoring: **YES** (100%) · **PARTIAL** (50%) · **NO** (0%) · **N/A** (excluded)
 
 ## Tests
 
 ```bash
-python -m pytest tests/ -v            # 283 tests
+python -m pytest tests/ -v            # 455 tests
 python -m pytest tests/ -v --cov=src  # with coverage
 ```
 
@@ -126,7 +138,7 @@ python -m pytest tests/ -v --cov=src  # with coverage
 | `test_response_parser.py` | 17 | Response parsing + validation |
 | `test_scoring.py` | 12 | Parameterized scoring edge cases |
 | `test_stt_cache.py` | 29 | STT cache + TTL + LRU eviction |
-| **Total** | **284** | |
+| **Total** | **455** | |
 
 ## Docker
 

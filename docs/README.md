@@ -71,16 +71,24 @@ python src/main.py --date-from 2026-02-01 --date-to 2026-02-10 --agent-id 120
 
 ## Evaluation Criteria (48 total)
 
-Grouped into 4 categories:
+Grouped into 10 categories, filtered by call type (28 per call):
 
-| Category | Count | Examples |
-|----------|-------|---------|
-| **Phone Skills** | 5 | Greeting, caller ID, hold procedure |
-| **Sales Techniques** | 8 | Needs assessment, objection handling |
-| **Urgency & Closing** | 3 | Creating urgency, closing attempt |
-| **Soft Skills** | 8 | Active listening, empathy, professionalism |
+| Category | Count | Call Type | Key Criteria |
+|----------|-------|-----------|-------------|
+| Opening | 5 | First Call | Greeting, permission check, advisor positioning |
+| Interview | 4 | First Call | Travel needs, dream outcome, buying motive |
+| Psychological Framing | 4 | First Call | Urgency, experience vs utility, scarcity |
+| First Call Closing | 7 | First Call | Research time, follow-up appointment, contact info |
+| Second Call Opening | 4 | Follow-up | Punctuality, recap, reconnection |
+| Strategic Presentation | 5 | Follow-up | Anchor/recommendation/value builder pattern |
+| Creating Certainty | 4 | Follow-up | Social proof, guarantees, trial close |
+| Objection Handling | 3 | Follow-up | Advanced objection techniques |
+| Commitment & Closing | 4 | Follow-up | Booking commitment, payment, confirmation |
+| Communication | 8 | Both | Active listening, tone, expertise, pace |
 
 Each criterion scored: **YES** (100%), **PARTIAL** (50%), **NO** (0%), **N/A** (excluded).
+First Call: 20 specific + 8 communication = 28 criteria.
+Follow-up Call: 20 specific + 8 communication = 28 criteria.
 
 ## Running Tests
 

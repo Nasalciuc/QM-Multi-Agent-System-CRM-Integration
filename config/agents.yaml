@@ -1,5 +1,6 @@
 # =============================================================================
-# Agent Configuration - All 4 agents in one file
+# Agent Configuration — PRODUCTION
+# Last updated: 2026-02-26 (post P2-P8 fixes + R-08 config consolidation)
 # =============================================================================
 
 # CRM API settings (audio source)

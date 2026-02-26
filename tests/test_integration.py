@@ -190,3 +190,111 @@ class TestIntegrationSmokeTest:
         # Verify downstream agents were called
         a2.transcribe_batch.assert_called_once()
         assert len(results) >= 0  # May be 0 if transcription key mismatch, but no crash
+
+
+# --- Tests: R-05 — CRM Integration Tests ---
+
+class TestCRMIntegration:
+    """R-05: Integration tests for CRM mode (pipeline.run())."""
+
+    def test_crm_direction_preserved(self, integration_agents):
+        """CRM direction must reach Agent 03's evaluate_call()."""
+        a1, a2, a3, a4 = integration_agents
+
+        # Agent 01 returns call with direction metadata
+        a1.search_and_download = MagicMock(return_value=[
+            {
+                "id": "crm_call_001",
+                "local_audio_path": "/tmp/crm_call_001.mp3",
+                "direction": "inbound",
+                "agent_name": "Emma",
+                "client_name": "John Doe",
+                "result": "completed",
+                "flight_request_status": "new",
+            },
+        ])
+
+        # Agent 02 must return transcript keyed by the filename
+        a2.transcribe_batch.return_value = {
+            "crm_call_001.mp3": {
+                "transcript": "Speaker 0: Hello, thanks for calling.\nSpeaker 1: Hi, I need to renew my subscription.",
+                "raw_text": "Hello, thanks for calling. Hi, I need to renew my subscription.",
+                "speakers_detected": 2,
+                "diarized": True,
+                "language_code": "en",
+                "status": "Success",
+                "cost_usd": 0.005,
+                "duration": 2.5,
+            },
+        }
+
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+        results = pipeline.run("2026-02-01", "2026-02-25")
+
+        assert len(results) == 1
+        # Verify metadata was passed to evaluate_call
+        call_kwargs = a3.evaluate_call.call_args
+        metadata = call_kwargs.kwargs.get("metadata", {})
+        assert metadata.get("direction") == "inbound"
+        assert metadata.get("agent_name") == "Emma"
+
+    def test_crm_mixed_directions(self, integration_agents):
+        """Multiple CRM calls with different directions."""
+        a1, a2, a3, a4 = integration_agents
+
+        a1.search_and_download = MagicMock(return_value=[
+            {"id": "c1", "local_audio_path": "/tmp/c1.mp3", "direction": "inbound"},
+            {"id": "c2", "local_audio_path": "/tmp/c2.mp3", "direction": "outbound"},
+        ])
+
+        a2.transcribe_batch.return_value = {
+            "c1.mp3": {
+                "transcript": "Speaker 0: Hi\nSpeaker 1: Hello",
+                "status": "Success", "cost_usd": 0.005, "duration": 2.0,
+                "raw_text": "Hi Hello", "speakers_detected": 2,
+            },
+            "c2.mp3": {
+                "transcript": "Speaker 0: Hey\nSpeaker 1: Hi there",
+                "status": "Success", "cost_usd": 0.003, "duration": 1.5,
+                "raw_text": "Hey Hi there", "speakers_detected": 2,
+            },
+        }
+
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+        results = pipeline.run("2026-02-01")
+
+        assert a3.evaluate_call.call_count == 2
+
+    def test_crm_no_recordings(self, integration_agents):
+        """CRM returns no recordings — pipeline should exit gracefully."""
+        a1, a2, a3, a4 = integration_agents
+        a1.search_and_download = MagicMock(return_value=[])
+
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+        results = pipeline.run("2026-02-01")
+
+        assert results == []
+        a2.transcribe_batch.assert_not_called()
+
+    def test_crm_minimal_metadata(self, integration_agents):
+        """CRM record with minimal metadata should not crash."""
+        a1, a2, a3, a4 = integration_agents
+        a1.search_and_download = MagicMock(return_value=[
+            {"id": "m1", "local_audio_path": "/tmp/m1.mp3"},
+        ])
+
+        a2.transcribe_batch.return_value = {
+            "m1.mp3": {
+                "transcript": "Speaker 0: Hello, thanks for calling.\nSpeaker 1: Hi, I need help.",
+                "raw_text": "Hello, thanks for calling. Hi, I need help.",
+                "speakers_detected": 2,
+                "status": "Success",
+                "cost_usd": 0.005,
+                "duration": 2.5,
+            },
+        }
+
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+        results = pipeline.run("2026-02-01")
+        # Should not crash; metadata defaults to empty strings
+        assert a3.evaluate_call.called

@@ -338,6 +338,9 @@ class QualityManagementAgent:
             max_retries=max_retries,
         )
 
+        # R-03: Store PII-redacted transcript for safe export
+        evaluation["transcript_redacted"] = processed_transcript
+
         # Add extra metadata
         evaluation["is_followup"] = is_followup
         if truncated:

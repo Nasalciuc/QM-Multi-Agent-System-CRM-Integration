@@ -24,7 +24,13 @@ import threading
 _EXPORT_BLOCKED_KEYS = frozenset({
     "raw_response", "raw_text", "raw_llm_output",
     "system_prompt", "user_prompt",
+    "transcript",  # R-03: Raw STT transcript contains PII
 })
+
+
+def _sanitize_for_export(evaluation: Dict) -> Dict:
+    """R-03 + R-04: Remove keys that must not appear in exported files."""
+    return {k: v for k, v in evaluation.items() if k not in _EXPORT_BLOCKED_KEYS}
 import time
 import logging
 
@@ -179,15 +185,29 @@ class Pipeline:
             # Step 1: Download recordings
             logger.info("STEP 1: Downloading recordings from CRM...")
             calls = self.audio_agent.search_and_download(date_from, date_to)
-            audio_files = [Path(c["local_audio_path"]) for c in calls if c.get("local_audio_path")]
+            audio_files = []
+            crm_metadata: Dict[str, Dict] = {}  # R-01: {filename: metadata_dict}
+            for c in calls:
+                if c.get("local_audio_path"):
+                    path = Path(c["local_audio_path"])
+                    audio_files.append(path)
+                    # Preserve all CRM metadata for downstream agents
+                    crm_metadata[path.name] = {
+                        "direction": c.get("direction", ""),
+                        "agent_name": c.get("agent_name", ""),
+                        "client_name": c.get("client_name", ""),
+                        "result": c.get("result", ""),
+                        "flight_request_status": c.get("flight_request_status", ""),
+                        "call_id": c.get("id", ""),
+                    }
             logger.info(f"STEP 1 complete: {len(audio_files)} audio files ready")
 
             if not audio_files:
                 logger.info("No recordings found. Pipeline complete.")
                 return []
 
-            # Steps 2-4: Process audio files
-            evaluations = self._process_audio_files(audio_files)
+            # Steps 2-4: Process audio files (pass CRM metadata)
+            evaluations = self._process_audio_files(audio_files, crm_metadata=crm_metadata)
 
             elapsed = time.time() - pipeline_start
             logger.info(f"Pipeline complete in {elapsed:.1f}s")
@@ -219,8 +239,17 @@ class Pipeline:
         finally:
             self._restore_signals()
 
-    def _process_audio_files(self, audio_files: List[Path]) -> List[Dict]:
-        """Steps 2-4: Transcribe, evaluate, export."""
+    def _process_audio_files(self, audio_files: List[Path],
+                             crm_metadata: Optional[Dict[str, Dict]] = None) -> List[Dict]:
+        """Steps 2-4: Transcribe, evaluate, export.
+
+        Args:
+            audio_files: List of audio file paths.
+            crm_metadata: Optional dict {filename: {direction, agent_name, ...}}
+                          from CRM API. None for local mode.
+        """
+        if crm_metadata is None:
+            crm_metadata = {}
 
         # NEW-06: Re-enable providers disabled in previous run (public API)
         self.qa_agent.reset_providers()
@@ -264,7 +293,14 @@ class Pipeline:
                     logger.warning("Graceful shutdown during rate-limit delay.")
                     break
 
-            evaluation = self.qa_agent.evaluate_call(data["transcript"], filename)
+            # R-01: Merge CRM metadata with any STT-level metadata
+            metadata = crm_metadata.get(filename, {})
+            if data.get("metadata"):
+                metadata.update(data["metadata"])
+            if metadata.get("direction"):
+                logger.info(f"CRM direction for {safe_log_filename(filename)}: {metadata['direction']}")
+
+            evaluation = self.qa_agent.evaluate_call(data["transcript"], filename, metadata=metadata)
 
             # Circuit breaker: stop after N consecutive LLM failures
             if "error" in evaluation:
@@ -355,7 +391,8 @@ class Pipeline:
 
             evaluations.append({
                 "filename": filename,
-                "transcript": data["transcript"],
+                "transcript": data["transcript"],  # Kept in memory; stripped by _sanitize_for_export
+                "transcript_redacted": evaluation.get("transcript_redacted", ""),  # R-03: PII-safe
                 "duration_min": data.get("duration", 0),
                 "call_type": evaluation.get("call_type", "Unknown"),
                 "overall_score": score_data["overall_score"],
@@ -385,6 +422,9 @@ class Pipeline:
 
         # HIGH-3/10: Filter out circuit breaker sentinel rows before export
         exportable = [e for e in evaluations if e.get("status") != "CIRCUIT_BREAKER_TRIGGERED"]
+
+        # R-03 + R-04: Strip blocked keys from export data (PII protection)
+        exportable = [_sanitize_for_export(e) for e in exportable]
 
         # Step 4: Export results
         logger.info("STEP 4: Exporting results...")

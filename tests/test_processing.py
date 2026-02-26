@@ -208,7 +208,10 @@ class TestTranscriptCleaner:
         assert lines[1].startswith("Agent:")
 
     def test_ivr_speaker_is_not_agent(self):
-        """P8-FIX-1: IVR alone should NOT make that speaker the agent."""
+        """P8-FIX-1 + R-10: IVR alone should NOT make that speaker the agent.
+        When Speaker 0 = IVR and Speaker 1 = client content ("I'm looking for"),
+        client-content detection identifies Speaker 1 as client, making
+        Speaker 0 the agent (by elimination)."""
         cleaner = TranscriptCleaner(direction="inbound", remove_fillers=False)
         raw = (
             "Speaker 0: This call is being recorded for quality assurance.\n"
@@ -216,15 +219,21 @@ class TestTranscriptCleaner:
         )
         result = cleaner.clean(raw)
         lines = result.strip().split("\n")
-        # IVR on Speaker 0 doesn't make it agent; Speaker 1 has client pattern
-        # → Speaker 0 = Client (IVR/client side), Speaker 1 = Agent (other speaker)
-        # Actually: client detected on Speaker 1 → Speaker 0 = Agent (the other one)
-        # But Speaker 0 is IVR... the heuristic will pick Second speaker as agent
-        # since no inbound_agent was found, client_content picks up Speaker 1.
-        # So remaining speaker (Speaker 0) becomes agent.
-        # This is acceptable: IVR is on client's phone system side.
-        assert "Agent:" in result
-        assert "Client:" in result
+
+        # R-10: Strong assertions — verify exact label assignment
+        assert len(lines) == 2
+
+        # Both labels must be present and different
+        labels = [l.split(":")[0] for l in lines]
+        assert set(labels) == {"Agent", "Client"}, f"Expected both labels, got {labels}"
+
+        # Speaker 1 has client content ("I'm looking for") → Client
+        # Speaker 0 (IVR/elimination) → Agent
+        if "looking for" in lines[1]:
+            assert lines[1].startswith("Client:"), \
+                f"Speaker 1 (client content) should be Client, got: {lines[1]}"
+            assert lines[0].startswith("Agent:"), \
+                f"Speaker 0 (IVR/elimination) should be Agent, got: {lines[0]}"
 
     def test_outbound_patterns_still_work(self):
         """P8-FIX-1: Standard outbound intro patterns should still function."""

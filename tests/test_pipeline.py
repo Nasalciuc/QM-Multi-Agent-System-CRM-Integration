@@ -308,3 +308,120 @@ class TestDataFlowContracts:
             args = a4.export_all.call_args[0][0]
             for e in args:
                 assert e.get("status") != "CIRCUIT_BREAKER_TRIGGERED"
+
+
+# --- Tests: R-01 — CRM Metadata Passthrough ---
+
+class TestCRMMetadataPassthrough:
+
+    def test_crm_metadata_reaches_evaluate_call(self, mock_agents):
+        """R-01: CRM metadata must reach evaluate_call() in run() mode."""
+        a1, a2, a3, a4 = mock_agents
+
+        # Simulate CRM returning calls with metadata
+        a1.search_and_download = MagicMock(return_value=[
+            {
+                "id": "call_123",
+                "local_audio_path": "/tmp/call_123.mp3",
+                "direction": "inbound",
+                "agent_name": "Emma",
+                "client_name": "Matt Kern",
+                "result": "completed",
+                "flight_request_status": "new",
+            }
+        ])
+
+        # Agent 02 must return transcript keyed by filename
+        a2.transcribe_batch.return_value = {
+            "call_123.mp3": {
+                "transcript": "Speaker 0: Hello\nSpeaker 1: Hi there how are you",
+                "raw_text": "Hello Hi there how are you",
+                "speakers_detected": 2,
+                "diarized": True,
+                "language_code": "en",
+                "status": "Success",
+                "cost_usd": 0.01,
+                "duration": 5.0,
+            },
+        }
+
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+        pipeline.run("2026-02-01", "2026-02-25")
+
+        # Verify evaluate_call received metadata with direction
+        assert a3.evaluate_call.called
+        call_kwargs = a3.evaluate_call.call_args
+        metadata = call_kwargs.kwargs.get("metadata", {})
+        assert metadata.get("direction") == "inbound"
+        assert metadata.get("agent_name") == "Emma"
+        assert metadata.get("call_id") == "call_123"
+
+    def test_run_local_works_without_metadata(self, pipeline):
+        """R-01: run_local() must continue working without CRM metadata."""
+        results = pipeline.run_local([Path("call1.mp3")])
+        assert len(results) > 0  # Existing behavior preserved
+
+    def test_crm_metadata_missing_direction_defaults_gracefully(self, mock_agents):
+        """R-01: CRM record without direction should not crash."""
+        a1, a2, a3, a4 = mock_agents
+        a1.search_and_download = MagicMock(return_value=[
+            {
+                "id": "call_456",
+                "local_audio_path": "/tmp/call_456.mp3",
+                # No "direction" key
+            }
+        ])
+        a2.transcribe_batch.return_value = {
+            "call_456.mp3": {
+                "transcript": "Speaker 0: Hello\nSpeaker 1: Hi there how are you",
+                "status": "Success",
+                "cost_usd": 0.01,
+                "duration": 5.0,
+                "raw_text": "hello",
+                "speakers_detected": 2,
+            },
+        }
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+        pipeline.run("2026-02-01")
+        assert a3.evaluate_call.called
+        # Metadata should have empty direction string (not crash)
+        meta = a3.evaluate_call.call_args.kwargs.get("metadata", {})
+        assert meta.get("direction") == ""
+
+
+# --- Tests: R-03 + R-04 — Export Sanitization ---
+
+class TestExportSanitization:
+
+    def test_blocked_keys_not_in_export(self, mock_agents):
+        """R-03 + R-04: _EXPORT_BLOCKED_KEYS must be stripped before export."""
+        a1, a2, a3, a4 = mock_agents
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+        pipeline.run_local([Path("call1.mp3")])
+
+        if a4.export_all.called:
+            exported = a4.export_all.call_args[0][0]  # first positional arg
+            for evaluation in exported:
+                for blocked_key in ("raw_response", "raw_text", "transcript",
+                                    "system_prompt", "user_prompt"):
+                    assert blocked_key not in evaluation, \
+                        f"Blocked key '{blocked_key}' found in exported evaluation"
+
+    def test_transcript_redacted_present_in_export(self, mock_agents):
+        """R-03: Redacted transcript should be available in export."""
+        a1, a2, a3, a4 = mock_agents
+        a3.evaluate_call.return_value["transcript_redacted"] = "Agent: Hi [PHONE]"
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+        pipeline.run_local([Path("call1.mp3")])
+
+        if a4.export_all.called:
+            exported = a4.export_all.call_args[0][0]
+            assert any("transcript_redacted" in e for e in exported)
+
+    def test_raw_transcript_still_in_memory(self, mock_agents):
+        """R-03: Raw transcript should remain in the in-memory evaluation list."""
+        a1, a2, a3, a4 = mock_agents
+        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
+        results = pipeline.run_local([Path("call1.mp3")])
+        # In-memory results should still have transcript
+        assert any("transcript" in r for r in results)

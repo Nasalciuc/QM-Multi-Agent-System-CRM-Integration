@@ -215,8 +215,12 @@ Category scores are computed independently for: opening, interview, psychologica
 ## Caching
 
 LLM responses are cached in `data/cache/` using SHA256 hash of:
-- transcript text
-- call type
+- model name
+- call type (First Call / Follow-up Call)
 - criteria count
+- criteria content hash (SHA256 of criteria YAML)
+- prompt template hash (SHA256 of system + user prompt)
+- temperature
+- transcript text
 
-Cache files are JSON. Delete `data/cache/` to force re-evaluation.
+Cache files are JSON with TTL-based expiry. Delete `data/cache/` to force re-evaluation.
