@@ -139,7 +139,7 @@ Creates LLM clients from `config/models.yaml`. Provides:
 2. Call LLM via ModelFactory (with fallback)
 3. Parse and validate response
 4. Retry on validation failure
-5. Cache results (SHA256 key from transcript + call_type + criteria_count)
+5. Cache results — Cache key = SHA256(model | call_type | criteria_count | criteria_hash | prompt_hash | temperature | transcript)
 
 ### src/agents/ — Pipeline Agents
 

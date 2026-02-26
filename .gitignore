@@ -36,6 +36,10 @@ logs/
 # Documentation build
 docs/_build/
 
+# Stale generated files
+AUDIO_REPORTS.md
+fix-emails.sh
+
 # IDE
 .vscode/
 .idea/

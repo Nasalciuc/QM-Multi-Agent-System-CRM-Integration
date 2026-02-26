@@ -164,6 +164,17 @@ Results are saved to `data/evaluations/`:
 | `QM_YYYYMMDD_HHMMSS_details.csv` | CSV details (one row per criterion) |
 | `QM_YYYYMMDD_HHMMSS.json` | Full JSON evaluation data |
 
+## Cache Management
+
+Clear LLM cache before re-running if you changed criteria, prompts, or speaker detection:
+
+```bash
+rm data/cache/*.json          # All LLM evaluations
+rm data/stt_cache/*.json      # All STT transcripts (rarely needed)
+```
+
+Cache key includes: model, call_type, criteria_hash, prompt_hash, temperature, processed transcript. Changes auto-invalidate, but manual clearing is recommended after major updates.
+
 ## Troubleshooting
 
 ### Common Issues

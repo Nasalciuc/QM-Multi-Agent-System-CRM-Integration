@@ -297,6 +297,13 @@ class TestDataFlowContracts:
                      "criteria", "overall_assessment", "status", "cost_usd"}
         assert required.issubset(set(e.keys())), f"Missing: {required - set(e.keys())}"
 
+    def test_evaluation_includes_word_count(self, pipeline, mock_agents):
+        """TASK-2: Evaluation output must include word_count as int."""
+        results = pipeline.run_local([Path("call1.mp3")])
+        assert len(results) > 0
+        assert "word_count" in results[0]
+        assert isinstance(results[0]["word_count"], int)
+
     def test_circuit_breaker_sentinel_filtered_from_export(self, mock_agents):
         """Circuit breaker rows must NOT reach agent_04.export_all()."""
         a1, a2, a3, a4 = mock_agents

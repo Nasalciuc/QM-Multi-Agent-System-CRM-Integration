@@ -116,7 +116,6 @@ def main():
             evaluation = qa_agent.evaluate_call(
                 transcript,
                 filename=audio_file.name,
-                metadata={"direction": "outbound"}
             )
             
             # Score
