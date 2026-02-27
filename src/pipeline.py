@@ -393,6 +393,8 @@ class Pipeline:
                 "filename": filename,
                 "transcript": data["transcript"],  # Kept in memory; stripped by _sanitize_for_export
                 "transcript_redacted": evaluation.get("transcript_redacted", ""),  # R-03: PII-safe
+                "pii_redacted": evaluation.get("pii_redacted", {}),
+                "pii_total_redactions": evaluation.get("pii_total_redactions", 0),
                 "duration_min": data.get("duration", 0),
                 "word_count": len(data.get("transcript", "").split()),
                 "call_type": evaluation.get("call_type", "Unknown"),

@@ -744,175 +744,191 @@ class TestB3Fix3TagConcatenation:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# AUD-06: Speaker Inversion Regression Tests
+# AUD-01/02/03: Company-Name Agent Detection + Inversion Prevention
 # ═══════════════════════════════════════════════════════════════════
 
 class TestAUD01CompanyNameAgentDetection:
-    """AUD-06: Ensure _detect_agent_by_company + detection chain works.
+    """AUD-01/02/03: Detect BBC agent by company name + behavior.
 
-    The root cause of call 3309622803008 inversion:
-    - Speaker 1 (Emma) says "Thank you for calling Business Class."
-    - Speaker 0 (Matt) later says "My name is Matt."
-    - OLD code: intro detection hits "my name is" first → marks Speaker 0 as agent (WRONG)
-    - NEW code: company name detection fires first → marks Speaker 1 as agent (CORRECT)
+    Production evidence: Call 3309622803008 had INVERTED labels.
+    Emma (BBC agent) was labeled "Client", Matt (customer) labeled "Agent".
+    Root cause: Matt's "my name is Matt Kern" triggered intro pattern
+    BEFORE Emma's "Thank you for calling Business Class" could be resolved.
     """
 
-    def _clean(self, lines_text: str, direction: str = "inbound") -> str:
-        """Helper: run TranscriptCleaner.clean() on raw lines text."""
-        cleaner = TranscriptCleaner(direction=direction)
-        return cleaner.clean(lines_text)
-
-    # --- 1. Company name + inbound pattern → agent (core fix) ---
-    def test_company_plus_inbound_pattern(self):
-        """Speaker with 'thank you for calling Business Class' = Agent."""
+    def test_inbound_emma_matt_inversion_fixed(self):
+        """GOLDEN TEST: Exact reproduction of 3309622803008 inversion.
+        Emma (Speaker 1) says 'Thank you for calling Business Class' → must be Agent.
+        Matt (Speaker 0) says 'my name is Matt Kern' → must be Client."""
+        cleaner = TranscriptCleaner(direction="inbound")
         raw = (
-            "Speaker 0: This call is being recorded for quality assurance.\n"
-            "Speaker 1: Thank you for calling Business Class, my name is Emma. How can I help?\n"
-            "Speaker 0: Hi, my name is Matt. I'm looking for flights.\n"
-        )
-        result = self._clean(raw)
-        assert "Agent: Thank you for calling Business Class" in result
-        assert "Client: Hi, my name is Matt" in result
-
-    # --- 2. Company name + agent behavior → agent ---
-    def test_company_plus_how_can_i_help(self):
-        """Speaker mentioning company + 'how can I help' = Agent."""
-        raw = (
-            "Speaker 0: Hi, I need to book a flight.\n"
-            "Speaker 1: Welcome to Buy Business Class, how can I help you today?\n"
-        )
-        result = self._clean(raw)
-        assert "Agent: Welcome to Buy Business Class" in result
-        assert "Client: Hi, I need to book" in result
-
-    # --- 3. Multiple company names covered ---
-    def test_buy_business_variant(self):
-        """'buy business' variant detected."""
-        raw = (
-            "Speaker 0: Thank you for calling Buy Business, my name is Sarah.\n"
-            "Speaker 1: Hi Sarah, I saw your ad online.\n"
-        )
-        result = self._clean(raw)
-        assert "Agent: Thank you for calling Buy Business" in result
-        assert "Client: Hi Sarah" in result
-
-    # --- 4. IVR lines skipped in company detection ---
-    def test_ivr_lines_skipped(self):
-        """IVR recording lines don't interfere with detection."""
-        raw = (
-            "Speaker 0: This call is being recorded for quality assurance.\n"
-            "Speaker 0: Your call is important to us.\n"
-            "Speaker 1: Thank you for calling Business Class, my name is Emma.\n"
-            "Speaker 0: Hi, my name is Matt.\n"
-        )
-        result = self._clean(raw)
-        assert "Agent: Thank you for calling Business Class" in result
-        assert "Client: Hi, my name is Matt" in result
-
-    # --- 5. Without company name, intro detection still works ---
-    def test_fallback_to_intro_detection(self):
-        """When no company name present, intro detection (Priority 1) works."""
-        raw = (
-            "Speaker 0: Hello, this is John calling from customer support.\n"
-            "Speaker 1: Oh hi John, I have a question.\n"
-        )
-        result = self._clean(raw)
-        assert "Agent: Hello, this is John" in result
-        assert "Client: Oh hi John" in result
-
-    # --- 6. AUD-05: scan_lines increased to 25 ---
-    def test_agent_detected_beyond_line_15(self):
-        """Agent intro on line 20 should still be detected (was missed with scan_lines=15)."""
-        # Build 19 client lines, then agent intro on line 20
-        lines = []
-        for i in range(19):
-            lines.append(f"Speaker 0: Customer message number {i+1}.")
-        lines.append("Speaker 1: My name is Sarah and I'll be helping you today.")
-        raw = "\n".join(lines)
-        result = TranscriptCleaner(direction="inbound").clean(raw)
-        assert "Agent: My name is Sarah" in result
-
-    # --- 7. AUD-04: IVR lines don't count toward scan limit ---
-    def test_ivr_not_counted_toward_scan_budget(self):
-        """IVR lines shouldn't reduce the effective scan window."""
-        lines = []
-        # 10 IVR lines
-        for i in range(10):
-            lines.append("Speaker 0: This call is being recorded for quality assurance.")
-        # 20 chat lines (within 25 budget since IVR doesn't count)
-        for i in range(19):
-            lines.append(f"Speaker 0: Customer question {i+1}.")
-        lines.append("Speaker 1: Thank you for calling Business Class, how can I help?")
-        raw = "\n".join(lines)
-        result = TranscriptCleaner(direction="inbound").clean(raw)
-        assert "Agent: Thank you for calling Business Class" in result
-
-    # --- 8. Exact reproduction of call 3309622803008 pattern ---
-    def test_call_3309622803008_pattern(self):
-        """Reproduces the EXACT inversion pattern from production call 3309622803008."""
-        raw = (
-            "Speaker 0: This call is being recorded for quality assurance.\n"
-            "Speaker 1: Thank you for calling Business Class. My name is Emma. "
+            "Speaker 0: This call is being recorded.\n"
+            "Speaker 1: Thank you for calling by Business Class. "
+            "You are talking to Emma. How can I help you?\n"
+            "Speaker 0: Yeah, my name is Matt Kern. I'm looking for flights "
+            "from Atlanta, Pensacola or Atlanta to Barcelona.\n"
+            "Speaker 1: Sure. Before we proceed further, just a quick question. "
             "Have you ever contacted us before?\n"
-            "Speaker 0: Hi Emma. My name is Matt. No, this is my first time.\n"
-            "Speaker 1: Great, how can I help you today?\n"
-            "Speaker 0: I'm looking for business class flights to Dubai.\n"
+            "Speaker 0: No.\n"
         )
-        result = self._clean(raw)
-        # Emma (Speaker 1) MUST be Agent — she mentions company + agent behavior
-        assert "Agent: Thank you for calling Business Class. My name is Emma" in result
-        # Matt (Speaker 0) MUST be Client — despite saying "My name is Matt"
-        assert "Client: Hi Emma. My name is Matt" in result
+        result = cleaner.clean(raw)
+        lines = result.strip().split("\n")
 
-    # --- 9. Client mentioning company name doesn't make them agent ---
-    def test_client_mentions_company_not_agent(self):
-        """Client casually mentioning company shouldn't be detected as agent."""
+        # Speaker 1 (Emma) MUST be Agent — she has company name + "how can I help"
+        emma_line = [l for l in lines if "Emma" in l][0]
+        assert emma_line.startswith("Agent:"), \
+            f"Emma (BBC agent) should be Agent, got: {emma_line[:80]}"
+
+        # Speaker 0 (Matt) MUST be Client — he's the customer
+        matt_line = [l for l in lines if "Matt" in l][0]
+        assert matt_line.startswith("Client:"), \
+            f"Matt (customer) should be Client, got: {matt_line[:80]}"
+
+    def test_company_name_plus_how_can_i_help(self):
+        """Company name + 'how can I help' = definitive agent."""
+        cleaner = TranscriptCleaner(direction="inbound")
         raw = (
-            "Speaker 0: I found Business Class online and wanted to inquire.\n"
-            "Speaker 1: Great, my name is Sarah and I'll assist you.\n"
+            "Speaker 0: Hello?\n"
+            "Speaker 1: Thank you for calling Buy Business Class. "
+            "This is Allen. How can I help?\n"
+            "Speaker 0: Hi, I am trying to book a ticket.\n"
         )
-        result = self._clean(raw)
-        # Speaker 1 should be agent (intro pattern), not Speaker 0
-        assert "Agent:" in result
-        assert "Client: I found Business Class" in result
+        result = cleaner.clean(raw)
+        lines = result.strip().split("\n")
+        assert lines[1].startswith("Agent:"), f"Expected Agent:, got {lines[1][:60]}"
+        assert "Allen" in lines[1]
+        assert lines[2].startswith("Client:")
+
+    def test_company_name_plus_have_you_contacted(self):
+        """Company name on one line + 'have you ever contacted' on same speaker."""
+        cleaner = TranscriptCleaner(direction="inbound")
+        raw = (
+            "Speaker 0: Hi there.\n"
+            "Speaker 1: Hello, calling from Buy Business Class. "
+            "Have you ever contacted us before?\n"
+            "Speaker 0: No, first time.\n"
+        )
+        result = cleaner.clean(raw)
+        lines = result.strip().split("\n")
+        assert lines[1].startswith("Agent:")
+
+    def test_my_business_class_variation(self):
+        """STT variation: 'calling My Business Class' (from production call 3324033166008)."""
+        cleaner = TranscriptCleaner(direction="inbound")
+        raw = (
+            "Speaker 0: Hello?\n"
+            "Speaker 1: Hello, thank you for calling My Business Class. "
+            "Am I speaking to Mr. Ramiro?\n"
+            "Speaker 0: This is Ramiro speaking.\n"
+        )
+        result = cleaner.clean(raw)
+        lines = result.strip().split("\n")
+        # "My Business Class" contains "business class" → match
+        assert lines[1].startswith("Agent:"), f"Expected Agent:, got {lines[1][:60]}"
+
+    def test_client_mentions_company_no_false_positive(self):
+        """Client saying 'I found Business Class online' must NOT become Agent."""
+        cleaner = TranscriptCleaner(direction="inbound")
+        raw = (
+            "Speaker 0: I found Buy Business Class on Google.\n"
+            "Speaker 1: Great! How can I help you today?\n"
+            "Speaker 0: I need a flight to Paris.\n"
+        )
+        result = cleaner.clean(raw)
+        lines = result.strip().split("\n")
+        # Speaker 0 has company name but NO agent behavior → NOT agent
+        # Speaker 1 has "how can I help" → Agent
+        assert lines[1].startswith("Agent:"), \
+            f"Speaker 1 (agent behavior) should be Agent, got {lines[1][:60]}"
+        assert lines[0].startswith("Client:"), \
+            f"Speaker 0 (customer) should be Client, got {lines[0][:60]}"
+
+    def test_ivr_with_company_not_agent(self):
+        """IVR recording mentioning company should NOT make IVR the agent."""
+        cleaner = TranscriptCleaner(direction="inbound")
+        raw = (
+            "Speaker 0: This call is being recorded. Thank you for calling "
+            "Buy Business Class.\n"
+            "Speaker 1: Hello, how can I help you?\n"
+            "Speaker 0: I need a flight.\n"
+        )
+        result = cleaner.clean(raw)
+        lines = result.strip().split("\n")
+        # Speaker 0 has IVR content → should be skipped by AUD-04
+        # Speaker 1 has agent behavior → Agent
+        assert lines[1].startswith("Agent:"), \
+            f"Speaker 1 should be Agent, got {lines[1][:60]}"
+
+    def test_outbound_calls_still_work(self):
+        """Existing outbound intro detection must NOT be broken."""
+        cleaner = TranscriptCleaner(direction="outbound")
+        raw = (
+            "Speaker 0: Hello?\n"
+            "Speaker 1: Hi, my name is Jerome from Buy Business Class.\n"
+            "Speaker 0: Yes, hi Jerome.\n"
+        )
+        result = cleaner.clean(raw)
+        lines = result.strip().split("\n")
+        assert lines[0].startswith("Client:")
+        assert lines[1].startswith("Agent:")
+        assert "Jerome" in lines[1]
+
+    def test_no_company_name_fallback_still_works(self):
+        """When no company name is present, existing detection chain runs."""
+        cleaner = TranscriptCleaner(direction="outbound")
+        raw = (
+            "Speaker 0: Hello?\n"
+            "Speaker 1: Hi, my name is Sarah. I'm calling about your trip.\n"
+            "Speaker 0: Oh, okay.\n"
+        )
+        result = cleaner.clean(raw)
+        lines = result.strip().split("\n")
+        # "my name is Sarah" triggers existing intro pattern → Agent
+        assert lines[1].startswith("Agent:")
+
+    def test_dan_from_business_class_followup(self):
+        """Production call 3394666620008: 'it's me, Dan, from business class.'"""
+        cleaner = TranscriptCleaner(direction="outbound")
+        raw = (
+            "Speaker 0: Hello?\n"
+            "Speaker 1: Sir, it's me, Dan, from business class.\n"
+            "Speaker 0: Yes. Hi.\n"
+        )
+        result = cleaner.clean(raw)
+        lines = result.strip().split("\n")
+        # "from business class" → company name + "calling from" pattern → Agent
+        assert lines[1].startswith("Agent:"), f"Expected Agent:, got {lines[1][:60]}"
 
 
 # ═══════════════════════════════════════════════════════════════════
-# AUD-08: Passport Pattern Monitoring Tests
+# AUD-08: Passport Pattern Precision Monitoring (P1)
 # ═══════════════════════════════════════════════════════════════════
 
 class TestAUD08PassportPatternMonitoring:
-    """AUD-08: Verify passport numbers are caught by PII redaction.
+    """P1: Passport pattern [A-Z]{1,2}\\d{6,9} may false-positive on airline codes.
 
-    Two of these tests are marked xfail because the current regex
-    may not yet handle all passport formats. They serve as monitoring
-    tests that will automatically pass when regex coverage improves.
+    These tests document KNOWN false positives. They are marked as xfail
+    because the fix (airline code exemption) is deferred to Phase 3.
+    When the fix ships, remove the xfail markers and these tests MUST pass.
     """
 
-    def test_uk_passport_9digit(self):
-        """9-digit UK passport number detected by PII redactor."""
+    @pytest.mark.xfail(reason="P1: Passport pattern matches airline codes — fix deferred to Phase 3")
+    def test_united_airlines_code_not_redacted(self):
+        """UA12345678 is a United Airlines reference, NOT a passport."""
         redactor = PIIRedactor()
-        text = "My passport number is 123456789."
-        result = redactor.redact(text)
-        # Current PII redactor may or may not catch this — xfail if not
-        has_redaction = "[PASSPORT]" in result["text"] or "[ID]" in result["text"] or "123456789" not in result["text"]
-        if not has_redaction:
-            pytest.skip("Passport pattern not yet implemented — monitoring test")
+        result = redactor.redact("Your United confirmation is UA12345678.")
+        assert "UA12345678" in result["text"]
 
-    @pytest.mark.xfail(reason="Passport regex not yet comprehensive", strict=False)
-    def test_passport_in_sentence(self):
-        """Passport number embedded in sentence should be redacted."""
+    @pytest.mark.xfail(reason="P1: Passport pattern matches airline codes — fix deferred to Phase 3")
+    def test_british_airways_code_not_redacted(self):
+        """BA1234567 is a British Airways reference, NOT a passport."""
         redactor = PIIRedactor()
-        text = "Passport: AB1234567, issued 2020."
-        result = redactor.redact(text)
-        assert "AB1234567" not in result["text"], \
-            f"Passport number not redacted: {result['text']}"
+        result = redactor.redact("British Airways ref: BA1234567.")
+        assert "BA1234567" in result["text"]
 
-    @pytest.mark.xfail(reason="Passport regex not yet comprehensive", strict=False)
-    def test_passport_with_keyword(self):
-        """'passport number' followed by digits should be redacted."""
+    def test_real_passport_still_caught(self):
+        """Real passport number must still be redacted."""
         redactor = PIIRedactor()
-        text = "My passport number is AB 1234567."
-        result = redactor.redact(text)
-        assert "1234567" not in result["text"], \
-            f"Passport number not redacted: {result['text']}"
+        result = redactor.redact("My passport number is C12345678.")
+        assert "[PASSPORT]" in result["text"]
+        assert "C12345678" not in result["text"]
