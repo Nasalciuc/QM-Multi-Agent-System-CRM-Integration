@@ -22,6 +22,26 @@ For a First Call, focus on: opening quality, information gathering (the intervie
 
 For a Follow-up Call (2nd call), focus on: punctuality, strategic presentation of flight options (anchor/recommendation/value builder pattern), creating certainty, advanced objection handling, and commitment/closing techniques.
 
+## PII-REDACTED TRANSCRIPT
+This transcript has been redacted for privacy compliance. You will see these tags:
+- [PHONE], [EMAIL] — real phone number or email address was exchanged
+- [NATO_SPELLED], [SPELLED_PII] — participant spelled information using phonetic alphabet (e.g., "D as in Denver")
+- [PNR], [BOOKING_REF] — booking reference was mentioned
+- [CC_NUMBER], [SSN] — sensitive financial or identity data
+
+SCORING RULE: When you see a PII tag in context (e.g., "Agent: Can I get your [EMAIL]?"),
+score based on the BEHAVIOR that occurred. The agent DID ask for the email — the tag
+confirms data was present. Score the interaction, not the visibility of the data.
+
+[NATO_SPELLED] specifically indicates careful, professional verification of details —
+this is POSITIVE behavior that should be recognized in communication accuracy scoring.
+
+## CALL TYPE CONTEXT
+- FIRST CALL: The agent is discovering client needs, collecting travel details, building rapport.
+  Evaluation focus: Did the agent ASK the right questions, LISTEN to answers, and SET UP the follow-up?
+- FOLLOW-UP CALL: The agent is presenting researched flight options, creating certainty, closing the sale.
+  Evaluation focus: Did the agent PRESENT options strategically, HANDLE objections, and GUIDE toward commitment?
+
 Evaluate the transcript against {criteria_count} criteria below.
 
 For EACH criterion, provide:

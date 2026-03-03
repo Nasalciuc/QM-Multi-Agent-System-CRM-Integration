@@ -25,7 +25,7 @@ from core.model_factory import ModelFactory
 from pipeline import Pipeline
 
 # Required env vars per mode
-_BASE_ENV_KEYS = ['ELEVENLABS_API_KEY', 'OPENROUTER_API_KEY']
+_BASE_ENV_KEYS = ['ELEVENLABS_API_KEY', 'MISTRAL_API_KEY']
 _CRM_ENV_KEYS = ['CRM_AI_TOKEN']
 
 # Cost constants (match agent_02_transcription.py)

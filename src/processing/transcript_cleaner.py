@@ -144,6 +144,9 @@ class TranscriptCleaner:
             )
         self.direction = direction_lower
         self.remove_fillers = remove_fillers
+        # MOD-10: Track speaker detection method for benchmark transparency
+        self._last_detection_method = None
+        self._last_agent_name = None
 
     def clean(self, transcript: str) -> str:
         """Full cleaning pipeline.
@@ -186,6 +189,8 @@ class TranscriptCleaner:
 
         if first_speaker is None:
             # No Speaker N: labels found — check for existing Agent/Client labels
+            self._last_detection_method = None
+            self._last_agent_name = None
             return text
 
         # Count lines per speaker to identify top-2
@@ -270,6 +275,10 @@ class TranscriptCleaner:
                 f"REAL-01: No agent intro found, falling back to position "
                 f"heuristic ({self.direction}): agent={agent_speaker}"
             )
+
+        # MOD-10: Store detection method for benchmark transparency
+        self._last_detection_method = "direction" if detection_method == "position" else detection_method
+        self._last_agent_name = None  # name extraction handled separately
 
         result_lines = []
         speakers_seen = set()

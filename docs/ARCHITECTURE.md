@@ -126,7 +126,7 @@ Creates LLM clients from `config/models.yaml`. Provides:
 
 **TokenCounter** — estimates token counts using `tiktoken` (with word-based fallback). Used for cost estimation and truncation decisions.
 
-**TranscriptChunker** — truncates long transcripts while preserving the beginning (60% — greeting criteria) and end (40% — closing criteria).
+**TranscriptChunker** — truncates long transcripts while preserving the beginning (30% — greeting/interview), middle (40% — negotiation/presentation), and end (30% — closing criteria).
 
 **PIIRedactor** — masks phone numbers, emails, credit card numbers, and SSNs before sending transcripts to external LLM APIs. Order: SSN → CC → email → phone (most specific first).
 
@@ -194,7 +194,7 @@ Creates LLM clients from `config/models.yaml`. Provides:
 Defined in `config/models.yaml`:
 
 ```
-1. OpenRouter (GPT-4o) ──failed──▶ 2. OpenRouter (Claude Sonnet) ──failed──▶ 3. OpenAI Direct
+1. Mistral EU (mistral-large, Paris) ──failed──▶ 2. OpenAI Direct (GPT-4o)
 ```
 
 Providers with missing API keys are skipped automatically.

@@ -79,6 +79,9 @@ class TranscriptChunker:
                 "original_tokens": original_tokens,
                 "final_tokens": original_tokens,
                 "removed_tokens": 0,
+                "removed_percentage": 0.0,
+                "kept_lines": len(transcript.split("\n")),
+                "total_lines": len(transcript.split("\n")),
             }
 
         # Reserve tokens for TWO truncation markers
@@ -159,9 +162,13 @@ class TranscriptChunker:
         truncated_text = "".join(parts)
         final_tokens = self._counter.count_tokens(truncated_text)
 
+        removed_tokens = original_tokens - final_tokens
+        removed_pct = round(removed_tokens / original_tokens * 100, 1) if original_tokens else 0.0
+        kept_lines = len(start_lines) + len(middle_text) + len(end_lines)
+
         logger.warning(
             f"Transcript truncated: {original_tokens} → {final_tokens} tokens "
-            f"(removed {original_tokens - final_tokens})"
+            f"(removed {removed_tokens}, {removed_pct}%)"
         )
 
         return {
@@ -169,5 +176,8 @@ class TranscriptChunker:
             "truncated": True,
             "original_tokens": original_tokens,
             "final_tokens": final_tokens,
-            "removed_tokens": original_tokens - final_tokens,
+            "removed_tokens": removed_tokens,
+            "removed_percentage": removed_pct,
+            "kept_lines": kept_lines,
+            "total_lines": total_lines,
         }

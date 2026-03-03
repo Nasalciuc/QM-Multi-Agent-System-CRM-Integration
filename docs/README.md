@@ -8,7 +8,7 @@ Automated 4-agent pipeline for evaluating call center recordings against 48 qual
 |-------|---------|------------|
 | **Agent 1** — Audio | Download / find call recordings | CRM API or local files |
 | **Agent 2** — Transcription | Speech-to-text with diarization | ElevenLabs Scribe v2 |
-| **Agent 3** — Evaluation | Score transcript against 48 QA criteria | OpenRouter / OpenAI GPT-4o |
+| **Agent 3** — Evaluation | Score transcript against 48 QA criteria | Mistral EU / OpenAI GPT-4o |
 | **Agent 4** — Export | Generate Excel, CSV, JSON reports | pandas + openpyxl |
 
 ## Quick Start
@@ -63,10 +63,9 @@ python src/main.py --date-from 2026-02-01 --date-to 2026-02-10 --agent-id 120
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ELEVENLABS_API_KEY` | Yes | ElevenLabs API key for STT |
-| `OPENROUTER_API_KEY` | Yes | OpenRouter API key for LLM evaluation |
+| `MISTRAL_API_KEY` | Yes | Mistral EU API key for LLM evaluation |
 | `CRM_AI_TOKEN` | CRM mode | CRM API bearer token |
 | `OPENAI_API_KEY` | No | Direct OpenAI fallback |
-| `ANTHROPIC_API_KEY` | No | Claude fallback via OpenRouter |
 | `WEBHOOK_URL` | No | Webhook for result notifications |
 
 ## Evaluation Criteria (48 total)

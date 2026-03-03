@@ -353,13 +353,56 @@ class QualityManagementAgent:
         # R-03: Store PII-redacted transcript for safe export
         evaluation["transcript_redacted"] = processed_transcript
 
+        # MOD-02: Count criteria with PII tags in evidence (benchmark metric)
+        _PII_TAGS = ["[PHONE]", "[EMAIL]", "[SPELLED_PII]", "[NATO_SPELLED]",
+                     "[PNR]", "[BOOKING_REF]", "[CC_NUMBER]", "[SSN]"]
+        pii_affected_count = 0
+        for _key, _result in evaluation.get("criteria", {}).items():
+            _evidence = _result.get("evidence", "")
+            if any(tag in _evidence for tag in _PII_TAGS):
+                pii_affected_count += 1
+        evaluation["pii_affected_criteria_count"] = pii_affected_count
+        if pii_affected_count > 0:
+            logger.info(
+                f"MOD-02: {pii_affected_count} criteria have PII tags in evidence "
+                f"for {safe_log_filename(filename)}"
+            )
+
         # Add extra metadata
         evaluation["is_followup"] = is_followup
+        # MOD-10: Store speaker detection method for benchmark transparency
+        evaluation["speaker_detection_method"] = getattr(cleaner, '_last_detection_method', None)
+        evaluation["speaker_agent_name"] = getattr(cleaner, '_last_agent_name', None)
         if truncated:
             evaluation["truncated"] = True
         # B3-FIX-4: Always store PII redaction info (even when count is 0)
         evaluation["pii_redacted"] = redaction["pii_found"]
         evaluation["pii_total_redactions"] = redaction["total_redactions"]
+
+        # MOD-07: Collect pipeline warnings for benchmark transparency
+        pipeline_warnings = []
+        if truncated:
+            removed_pct = chunk_result.get("removed_percentage", 0)
+            pipeline_warnings.append(f"TRUNCATED: {removed_pct}% of transcript removed")
+        if redaction["pii_found"]:
+            pipeline_warnings.append(
+                f"PII_REDACTED: {redaction['total_redactions']} redactions applied"
+            )
+        if pii_affected_count > 0:
+            pipeline_warnings.append(
+                f"PII_IN_EVIDENCE: {pii_affected_count} criteria affected"
+            )
+        _detection_method = getattr(cleaner, '_last_detection_method', None)
+        if _detection_method == "direction":
+            pipeline_warnings.append(
+                "LOW_CONFIDENCE_SPEAKER: direction-based heuristic used"
+            )
+        if pipeline_warnings:
+            evaluation["pipeline_warnings"] = pipeline_warnings
+            logger.info(
+                f"MOD-07: Pipeline warnings for {safe_log_filename(filename)}: "
+                f"{pipeline_warnings}"
+            )
 
         # REAL-02: Multi-agent detection
         agents_detected = self.detect_agents_in_transcript(cleaned)

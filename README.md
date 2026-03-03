@@ -14,7 +14,7 @@ Automated **4-agent pipeline** that evaluates call center recordings against **4
 |-------|---------|------------|
 | **Agent 1** — Audio | Download / find call recordings | CRM API or local files |
 | **Agent 2** — Transcription | Speech-to-text with diarization | ElevenLabs Scribe v2 |
-| **Agent 3** — Evaluation | Score transcript against 48 QA criteria | OpenRouter / OpenAI GPT-4o |
+| **Agent 3** — Evaluation | Score transcript against 48 QA criteria | Mistral EU / OpenAI GPT-4o |
 | **Agent 4** — Export | Generate Excel, CSV, JSON reports | pandas + openpyxl |
 
 ### Pipeline Flow
@@ -74,9 +74,9 @@ src/
 
 ### Key Features
 
-- **LLM Fallback Chain** — OpenRouter (GPT-4o) → Claude Sonnet → Direct OpenAI
+- **LLM Fallback Chain** — Mistral EU (Paris) → Direct OpenAI
 - **PII Redaction** — Phone, email, credit card, SSN masked before LLM calls
-- **Smart Truncation** — Preserves beginning (60%) + end (40%) for greeting/closing criteria
+- **Smart Truncation** — Preserves beginning (30%) + middle (40%) + end (30%) for greeting/negotiation/closing criteria
 - **Response Caching** — SHA256-keyed JSON cache avoids redundant API calls
 - **Transcript Persistence** — Raw transcripts saved to `data/transcripts/`
 
@@ -85,10 +85,9 @@ src/
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ELEVENLABS_API_KEY` | ✅ | ElevenLabs Scribe v2 STT |
-| `OPENROUTER_API_KEY` | ✅ | OpenRouter LLM evaluation |
+| `MISTRAL_API_KEY` | ✅ | Mistral EU LLM evaluation |
 | `CRM_AI_TOKEN` | CRM mode | CRM API bearer token |
 | `OPENAI_API_KEY` | — | Direct OpenAI fallback |
-| `ANTHROPIC_API_KEY` | — | Claude fallback |
 | `WEBHOOK_URL` | — | Result notifications |
 
 ## Evaluation Criteria (48 total)

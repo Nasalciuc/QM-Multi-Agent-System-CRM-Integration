@@ -1,33 +1,25 @@
 # =============================================================================
 # LLM Model Configuration — Single Source of Truth
 # =============================================================================
-# All model definitions, pricing, and fallback chain in one file.
-# Replaces scattered hardcoded values from agent_03 and agents.yaml.
+# MIGRATED: OpenRouter → Mistral EU (Paris) on 2026-03-03
+# Reason: OpenRouter 402 failures + GDPR compliance (EU data residency)
+# Decision: Expert debate consensus — Mistral OpenAI-compatible endpoint
+# =============================================================================
 
-# Primary model (tried first)
+# Primary model — Mistral Large (Paris, EU)
 primary:
-  provider: "openrouter"
-  model: "gpt-4o-2024-11-20"
-  base_url: "https://openrouter.ai/api/v1"
-  api_key_env: "OPENROUTER_API_KEY"      # env var name (not the value)
+  provider: "mistral-eu"
+  model: "mistral-large-latest"
+  base_url: "https://api.mistral.ai/v1"
+  api_key_env: "MISTRAL_API_KEY"
   temperature: 0.1
   max_tokens: 4096
   pricing:
-    input_per_1m: 2.50
-    output_per_1m: 10.00
+    input_per_1m: 2.00
+    output_per_1m: 6.00
 
 # Fallback chain — tried in order if primary fails
 fallbacks:
-  - provider: "openrouter-claude"
-    model: "anthropic/claude-3.5-sonnet"
-    base_url: "https://openrouter.ai/api/v1"
-    api_key_env: "OPENROUTER_API_KEY"
-    temperature: 0.1
-    max_tokens: 4096
-    pricing:
-      input_per_1m: 3.00
-      output_per_1m: 15.00
-
   - provider: "openai-direct"
     model: "gpt-4o-2024-11-20"
     base_url: "https://api.openai.com/v1"
@@ -40,6 +32,6 @@ fallbacks:
 
 # Token limits for preprocessing layer
 token_limits:
-  max_input_tokens: 30000           # Truncate transcripts beyond this
+  max_input_tokens: 30000
   max_output_tokens: 4096
-  cost_warning_threshold_usd: 0.50  # Warn if estimated cost > this
+  cost_warning_threshold_usd: 0.50

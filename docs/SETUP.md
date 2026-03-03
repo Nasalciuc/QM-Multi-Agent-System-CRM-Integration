@@ -4,7 +4,7 @@
 
 - **Python** 3.11+
 - **FFmpeg** (for pydub audio duration detection)
-- **API Keys**: ElevenLabs + OpenRouter (minimum)
+- **API Keys**: ElevenLabs + Mistral (minimum)
 
 ## Installation
 
@@ -62,11 +62,10 @@ Edit `.env` and fill in the required API keys:
 ```env
 # Required
 ELEVENLABS_API_KEY=your_elevenlabs_key
-OPENROUTER_API_KEY=your_openrouter_key
+MISTRAL_API_KEY=your_mistral_key
 
-# Optional fallbacks
+# Optional fallback
 OPENAI_API_KEY=your_openai_key
-ANTHROPIC_API_KEY=your_anthropic_key
 
 # CRM API (needed for --date-from mode)
 CRM_AI_TOKEN=your_crm_token
@@ -103,10 +102,10 @@ Edit `config/models.yaml` to change the primary model or fallback chain:
 
 ```yaml
 primary:
-  provider: openrouter
-  model: openai/gpt-4o-2024-11-20
-  api_key_env: OPENROUTER_API_KEY
-  base_url: https://openrouter.ai/api/v1
+  provider: mistral-eu
+  model: mistral-large-latest
+  api_key_env: MISTRAL_API_KEY
+  base_url: https://api.mistral.ai/v1
 ```
 
 ## Running
