@@ -57,8 +57,7 @@ The QM Multi Agent System is a 4-agent pipeline that processes call center recor
 │   ├── processing/             # Transcript processing pipeline
 │   │   ├── transcript_cleaner.py  # Speaker label normalization, filler removal
 │   │   ├── token_counter.py       # tiktoken-based token counting + cost estimation
-│   │   ├── chunker.py             # Smart truncation (60% start, 40% end)
-│   │   └── pii_redactor.py        # Phone/email/CC/SSN masking
+│   │   └── chunker.py             # Smart truncation (60% start, 40% end)
 │   │
 │   ├── inference/              # LLM inference orchestration
 │   │   ├── response_parser.py  # JSON extraction + criteria validation
@@ -128,7 +127,7 @@ Creates LLM clients from `config/models.yaml`. Provides:
 
 **TranscriptChunker** — truncates long transcripts while preserving the beginning (30% — greeting/interview), middle (40% — negotiation/presentation), and end (30% — closing criteria).
 
-**PIIRedactor** — masks phone numbers, emails, credit card numbers, and SSNs before sending transcripts to external LLM APIs. Order: SSN → CC → email → phone (most specific first).
+> PII redaction was removed in April 2026. All LLM providers operate under EU DPAs; the company is US-based with US/CA/AU clients. Transcripts are stored and exported complete and unredacted.
 
 ### src/inference/ — LLM Orchestration
 
@@ -158,7 +157,7 @@ Creates LLM clients from `config/models.yaml`. Provides:
 
 **Agent 3 — QualityManagementAgent**
 - Thin orchestration wrapper that delegates to core/processing/inference
-- Pipeline: clean → redact PII → truncate → filter criteria → LLM eval
+- Pipeline: clean → truncate → filter criteria → LLM eval
 - Scoring: `calculate_score()` computes overall + per-category scores
 - Call type detection from filename (first call vs follow-up)
 
@@ -176,17 +175,15 @@ Creates LLM clients from `config/models.yaml`. Provides:
    ↓
 3. TranscriptCleaner → Agent/Client labels, no fillers
    ↓
-4. PIIRedactor → [PHONE], [EMAIL], [SSN], [CC_NUMBER] masks
+4. TranscriptChunker → truncated if >30K tokens
    ↓
-5. TranscriptChunker → truncated if >30K tokens
+5. InferenceEngine → LLM evaluation (48 criteria scored)
    ↓
-6. InferenceEngine → LLM evaluation (48 criteria scored)
+6. ResponseParser → validated JSON with scores + evidence
    ↓
-7. ResponseParser → validated JSON with scores + evidence
+7. calculate_score() → overall 0-100%, per-category scores
    ↓
-8. calculate_score() → overall 0-100%, per-category scores
-   ↓
-9. IntegrationAgent → Excel/CSV/JSON + optional webhook
+8. IntegrationAgent → Excel/CSV/JSON + optional webhook
 ```
 
 ## LLM Fallback Chain

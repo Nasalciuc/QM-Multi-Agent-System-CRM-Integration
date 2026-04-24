@@ -409,83 +409,33 @@ class TestExportSanitization:
         if a4.export_all.called:
             exported = a4.export_all.call_args[0][0]  # first positional arg
             for evaluation in exported:
-                for blocked_key in ("raw_response", "raw_text", "transcript",
+                for blocked_key in ("raw_response", "raw_text",
                                     "system_prompt", "user_prompt"):
                     assert blocked_key not in evaluation, \
                         f"Blocked key '{blocked_key}' found in exported evaluation"
 
-    def test_transcript_redacted_present_in_export(self, mock_agents):
-        """R-03: Redacted transcript should be available in export."""
+    def test_transcript_present_in_export(self, mock_agents):
+        """Unredacted transcript must be present in exported evaluations (EU-DPA policy)."""
         a1, a2, a3, a4 = mock_agents
-        a3.evaluate_call.return_value["transcript_redacted"] = "Agent: Hi [PHONE]"
         pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
         pipeline.run_local([Path("call1.mp3")])
 
         if a4.export_all.called:
             exported = a4.export_all.call_args[0][0]
-            assert any("transcript_redacted" in e for e in exported)
+            assert any("transcript" in e and e["transcript"] for e in exported)
 
     def test_raw_transcript_still_in_memory(self, mock_agents):
-        """R-03: Raw transcript should remain in the in-memory evaluation list."""
+        """Raw transcript should remain in the in-memory evaluation list."""
         a1, a2, a3, a4 = mock_agents
         pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
         results = pipeline.run_local([Path("call1.mp3")])
         # In-memory results should still have transcript
         assert any("transcript" in r for r in results)
 
-    # --- AUD-07: Pipeline integrity tests ---
+    # --- Pipeline integrity tests ---
 
-    def test_pii_redacted_transcript_forwarded(self, mock_agents):
-        """AUD-07: transcript_redacted from Agent 03 evaluation must appear in results."""
-        a1, a2, a3, a4 = mock_agents
-        redacted_text = "Agent: Hello [NAME]. Client: My number is [PHONE]."
-        # Pipeline pulls transcript_redacted from Agent 03's evaluate_call return value
-        a3.evaluate_call.return_value = {
-            "criteria": {"greeting": {"score": "YES", "evidence": "ok"}},
-            "overall_assessment": "Good",
-            "strengths": [],
-            "improvements": [],
-            "call_type": "First Call",
-            "model_used": "gpt-4o",
-            "provider_used": "openrouter",
-            "cost_usd": 0.03,
-            "transcript_redacted": redacted_text,
-        }
-        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
-        results = pipeline.run_local([Path("call1.mp3")])
-        # transcript_redacted should be in the pipeline output
-        assert any(r.get("transcript_redacted") == redacted_text for r in results), \
-            "transcript_redacted not preserved from Agent 03 evaluation into pipeline results"
-
-    @pytest.mark.xfail(reason="pii_total_redactions not yet forwarded through pipeline", strict=False)
-    def test_pii_total_redactions_in_evaluation(self, mock_agents):
-        """AUD-07: pii_total_redactions should be preserved through pipeline.
-
-        Currently the pipeline does not include pii_total_redactions in the
-        evaluation output dict. This xfail test monitors when it gets added.
-        """
-        a1, a2, a3, a4 = mock_agents
-        a3.evaluate_call.return_value = {
-            "criteria": {"greeting": {"score": "YES", "evidence": "ok"}},
-            "overall_assessment": "Good",
-            "strengths": [],
-            "improvements": [],
-            "call_type": "First Call",
-            "model_used": "gpt-4o",
-            "provider_used": "openrouter",
-            "cost_usd": 0.03,
-            "pii_total_redactions": 5,
-        }
-        pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
-        results = pipeline.run_local([Path("call1.mp3")])
-        # pii_total_redactions should be in results
-        assert any(r.get("pii_total_redactions") == 5 for r in results), \
-            "pii_total_redactions lost during pipeline processing"
-
-    def test_raw_transcript_not_in_exported_data(self, mock_agents):
-        """AUD-07/PL1: Raw PII-containing transcript must never reach Agent 04 export.
-        The pipeline builds output dicts that include 'transcript' for in-memory use,
-        but _sanitize_for_export() must strip it before passing to Agent 04."""
+    def test_transcript_forwarded_unredacted(self, mock_agents):
+        """Transcript flows from Agent 02 through pipeline to export unchanged (no masking)."""
         a1, a2, a3, a4 = mock_agents
         pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
         pipeline.run_local([Path("call1.mp3")])
@@ -493,21 +443,23 @@ class TestExportSanitization:
         if a4.export_all.called:
             exported = a4.export_all.call_args[0][0]
             for e in exported:
-                assert "transcript" not in e, \
-                    "Raw transcript found in exported data — PII leakage risk (PL1)"
-                # transcript_redacted SHOULD be present
-                assert "transcript_redacted" in e or True  # Don't fail if missing, just check transcript
+                # Full transcript must survive into export; no PII-tag placeholders
+                assert e.get("transcript"), "Transcript missing from exported data"
+                for tag in ("[PHONE]", "[EMAIL]", "[SSN]", "[CC_NUMBER]",
+                            "[SPELLED_PII]", "[NATO_SPELLED]"):
+                    assert tag not in e["transcript"], \
+                        f"Unexpected PII tag {tag} in transcript — redaction should be removed"
 
-    def test_pii_redacted_in_exported_data(self, mock_agents):
-        """AUD-07/B3-FIX-4b: pii_redacted must appear in exported evaluations."""
+    def test_no_pii_fields_in_exported_data(self, mock_agents):
+        """Legacy PII fields must not appear in export after PIIRedactor removal."""
         a1, a2, a3, a4 = mock_agents
-        a3.evaluate_call.return_value["pii_redacted"] = {"phone": 2, "email": 0}
-        a3.evaluate_call.return_value["pii_total_redactions"] = 2
         pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
         pipeline.run_local([Path("call1.mp3")])
 
         if a4.export_all.called:
             exported = a4.export_all.call_args[0][0]
             for e in exported:
-                assert "pii_redacted" in e, \
-                    "pii_redacted missing from export (B3-FIX-4b not forwarded)"
+                for key in ("transcript_redacted", "pii_redacted",
+                            "pii_total_redactions"):
+                    assert key not in e, \
+                        f"Legacy PII field '{key}' leaked into export"

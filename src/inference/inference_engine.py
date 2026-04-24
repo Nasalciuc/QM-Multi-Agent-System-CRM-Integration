@@ -31,18 +31,6 @@ logger = logging.getLogger("qa_system.inference")
 # Per-key lock type alias
 _KeyLocks = Dict[str, threading.Lock]
 
-# Lazy-loaded PII redactor for sanitising error responses (CRIT-NEW-1)
-_pii_redactor_instance = None
-
-
-def _get_pii_redactor():
-    """Lazy-load PIIRedactor to avoid circular imports."""
-    global _pii_redactor_instance
-    if _pii_redactor_instance is None:
-        from processing.pii_redactor import PIIRedactor
-        _pii_redactor_instance = PIIRedactor()
-    return _pii_redactor_instance
-
 
 # HIGH-6: _json_serializer removed — now imported from utils
 
@@ -97,7 +85,7 @@ class InferenceEngine:
         "criteria", "overall_assessment", "strengths", "improvements",
         "critical_gaps", "call_type", "model_used", "provider_used",
         "tokens_used", "cost_usd", "eval_time_seconds", "is_followup",
-        "truncated", "pii_redacted", "prompt_hash", "criteria_version",
+        "truncated", "prompt_hash", "criteria_version",
     })
 
     # Required keys that must be present when loading from cache (#2)
@@ -374,8 +362,7 @@ class InferenceEngine:
                 # do NOT include raw_response in the returned dict — it may
                 # flow to export/JSON files and leak PII.
                 if raw_text:
-                    redacted_raw = _get_pii_redactor().redact(raw_text)["text"]
-                    logger.debug(f"Raw LLM response (redacted): {redacted_raw[:500]}")
+                    logger.debug(f"Raw LLM response: {raw_text[:500]}")
                 return {
                     "error": f"Validation error: {e}",
                     "call_type": call_type,

@@ -31,15 +31,6 @@ elevenlabs:
 
 # #10: LLM model config is in config/models.yaml — not duplicated here
 
-# PII Redaction settings
-# WARNING: redact_multiline_phone is disabled for travel sales domain.
-# The multiline phone detector creates massive false positives on pricing,
-# scheduling, and logistics discussions (538 false [PHONE] tags in 20 calls).
-# Real phone numbers are already caught by single-line patterns.
-# Only re-enable for domains where phone dictation spans multiple lines.
-# pii_redaction:
-#   redact_multiline_phone: false
-
 integration:
   webhook_url: ""              # Set via WEBHOOK_URL env var
   retry_attempts: 3

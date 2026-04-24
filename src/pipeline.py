@@ -19,17 +19,17 @@ import shutil
 import signal
 import threading
 
-# TASK-1: Keys that must NEVER appear in exported evaluation dicts.
-# Guards against PII leakage from raw LLM responses / debug artifacts.
+# Keys that must NEVER appear in exported evaluation dicts.
+# Raw LLM I/O and prompts are debug artifacts — never ship them to customer outputs.
+# Transcripts ARE exported (unredacted) under the EU-DPA policy.
 _EXPORT_BLOCKED_KEYS = frozenset({
     "raw_response", "raw_text", "raw_llm_output",
     "system_prompt", "user_prompt",
-    "transcript",  # R-03: Raw STT transcript contains PII
 })
 
 
 def _sanitize_for_export(evaluation: Dict) -> Dict:
-    """R-03 + R-04: Remove keys that must not appear in exported files."""
+    """Remove raw LLM I/O / prompt debug keys before export."""
     return {k: v for k, v in evaluation.items() if k not in _EXPORT_BLOCKED_KEYS}
 import time
 import logging
@@ -384,17 +384,13 @@ class Pipeline:
             provider = evaluation.get("provider_used", evaluation.get("model_used", "unknown"))
             self._providers_used.add(provider)
 
-            # TASK-1: Strip any blocked keys from evaluation before export
-            # Guards against PII leakage even if upstream code adds raw text
+            # Strip raw LLM I/O / prompt debug keys from evaluation before export
             for blocked_key in _EXPORT_BLOCKED_KEYS:
                 evaluation.pop(blocked_key, None)
 
             evaluations.append({
                 "filename": filename,
-                "transcript": data["transcript"],  # Kept in memory; stripped by _sanitize_for_export
-                "transcript_redacted": evaluation.get("transcript_redacted", ""),  # R-03: PII-safe
-                "pii_redacted": evaluation.get("pii_redacted", {}),
-                "pii_total_redactions": evaluation.get("pii_total_redactions", 0),
+                "transcript": data["transcript"],
                 "duration_min": data.get("duration", 0),
                 "word_count": len(data.get("transcript", "").split()),
                 "call_type": evaluation.get("call_type", "Unknown"),
@@ -426,7 +422,7 @@ class Pipeline:
         # HIGH-3/10: Filter out circuit breaker sentinel rows before export
         exportable = [e for e in evaluations if e.get("status") != "CIRCUIT_BREAKER_TRIGGERED"]
 
-        # R-03 + R-04: Strip blocked keys from export data (PII protection)
+        # Strip raw LLM I/O / prompt debug keys from export data
         exportable = [_sanitize_for_export(e) for e in exportable]
 
         # Step 4: Export results

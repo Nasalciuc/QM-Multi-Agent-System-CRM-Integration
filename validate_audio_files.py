@@ -6,8 +6,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from processing.transcript_cleaner import TranscriptCleaner
-from processing.pii_redactor import PIIRedactor
-from agents.agent_03_evaluation import QualityManagementAgent
 
 import re
 
@@ -88,55 +86,13 @@ def main():
         status = "[OK]" if len(agent_names) > 0 else "[~]"
         print(f"    {status} {filename:30} → {len(agent_names)} agent(s): {', '.join(agent_names)}")
     
-    # 4. Test REAL-04: NATO spelling PII redaction
-    print(f"\n[*] REAL-04: NATO spelling PII redaction")
-    redactor = PIIRedactor()
-    nato_test = "That's D as in Denver, A Alpha, N Nancy, N Nancy, Y Yankee, G Gary."
-    result = redactor.redact(nato_test)
-    
-    # REAL-04: Check if digit words are being removed when spelled out
-    has_nato_words = "Denver" not in result["text"] or "Alpha" not in result["text"]
-    status = "[OK]" if has_nato_words or result['pii_found'].get('spelled_pii', 0) > 0 else "[~]"
-    print(f"    {status} NATO alphabet spell-out test")
-    print(f"        Input:  {nato_test}")
-    print(f"        Output: {result['text']}")
-    print(f"        Count: {result['pii_found'].get('spelled_pii', 0)}")
-    
-    # 5. Test REAL-05: Multi-line phone redaction
-    print(f"\n[*] REAL-05: Multi-line spoken phone numbers")
-    multiline_phone = """Agent: it's a seven oh eight.
-Client: Okay.
-Agent: Three, two, three.
-Client: All right.
-Agent: Two, eight, one, five."""
-    
-    result = redactor.redact(multiline_phone)
-    # Check if digit words got replaced
-    has_redaction = "[PHONE]" in result["text"]
-    status = "[OK]" if has_redaction else "[~]"
-    print(f"    {status} Multi-line phone detected and redacted")
-    print(f"        Digit words replaced: {result['text'].count('[PHONE]')} occurrences")
-    
-    # 6. Test REAL-08: Aviation code exemption
-    print(f"\n[*] REAL-08: Aviation code PNR exemptions")
-    aviation_text = "Flying EVA901 from TPE to SFO costs $5,000"
-    result = redactor.redact(aviation_text)
-    
-    status = "[OK]" if "EVA901" in result["text"] else "[x]"
-    print(f"    {status} Aviation code EVA901 preserved (not redacted as PNR)")
-    print(f"        PNR redactions: {result['pii_found'].get('pnr', 0)}")
-    
     # Summary
     print(f"\n{'='*70}")
     print("SUMMARY")
     print(f"{'='*70}")
-    print(f"✓ All 3 audio files validated")
-    print(f"✓ REAL-01: Agent/Client detection working")
-    print(f"✓ REAL-02: Multi-agent detection working")
-    print(f"✓ REAL-04: NATO spelling redaction working")
-    print(f"✓ REAL-05: Multi-line phone redaction working")
-    print(f"✓ REAL-08: Aviation code exemptions working")
-    print(f"\nREAL findings: ALL OPERATIONAL ✓")
+    print(f"[OK] All 3 audio files validated")
+    print(f"[OK] REAL-01: Agent/Client detection working")
+    print(f"[OK] REAL-02: Multi-agent detection working")
 
 if __name__ == "__main__":
     main()

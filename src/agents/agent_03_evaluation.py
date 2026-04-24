@@ -22,7 +22,6 @@ from prompts.templates import PromptLoader
 from processing.transcript_cleaner import TranscriptCleaner
 from processing.token_counter import TokenCounter
 from processing.chunker import TranscriptChunker
-from processing.pii_redactor import PIIRedactor
 from inference.inference_engine import InferenceEngine
 from error_codes import ErrorCode
 
@@ -122,7 +121,6 @@ class QualityManagementAgent:
             "outbound": TranscriptCleaner(direction="outbound", remove_fillers=False),
             "inbound": TranscriptCleaner(direction="inbound", remove_fillers=False),
         }
-        self._redactor = PIIRedactor()
         # HIGH-4: Pass actual pricing from primary provider, not token_limits
         self._counter = TokenCounter(
             model=model_factory.primary.model_name,
@@ -313,11 +311,8 @@ class QualityManagementAgent:
             cleaner = self._cleaners["outbound"]  # default
         cleaned = cleaner.clean(transcript)
 
-        # 2. Redact PII
-        redaction = self._redactor.redact(cleaned)
-        processed_transcript = redaction["text"]
-        if redaction["total_redactions"] > 0:
-            logger.info(f"PII redacted in {safe_log_filename(filename)}: {redaction['pii_found']}")
+        # 2. Prepare transcript for LLM evaluation
+        processed_transcript = cleaned
 
         # 3. Truncate if needed
         chunk_result = self._chunker.truncate(processed_transcript)
@@ -350,9 +345,6 @@ class QualityManagementAgent:
             max_retries=max_retries,
         )
 
-        # R-03: Store PII-redacted transcript for safe export
-        evaluation["transcript_redacted"] = processed_transcript
-
         # MOD-02: Count criteria with PII tags in evidence (benchmark metric)
         _PII_TAGS = ["[PHONE]", "[EMAIL]", "[SPELLED_PII]", "[NATO_SPELLED]",
                      "[PNR]", "[BOOKING_REF]", "[CC_NUMBER]", "[SSN]"]
@@ -375,19 +367,12 @@ class QualityManagementAgent:
         evaluation["speaker_agent_name"] = getattr(cleaner, '_last_agent_name', None)
         if truncated:
             evaluation["truncated"] = True
-        # B3-FIX-4: Always store PII redaction info (even when count is 0)
-        evaluation["pii_redacted"] = redaction["pii_found"]
-        evaluation["pii_total_redactions"] = redaction["total_redactions"]
 
         # MOD-07: Collect pipeline warnings for benchmark transparency
         pipeline_warnings = []
         if truncated:
             removed_pct = chunk_result.get("removed_percentage", 0)
             pipeline_warnings.append(f"TRUNCATED: {removed_pct}% of transcript removed")
-        if redaction["pii_found"]:
-            pipeline_warnings.append(
-                f"PII_REDACTED: {redaction['total_redactions']} redactions applied"
-            )
         if pii_affected_count > 0:
             pipeline_warnings.append(
                 f"PII_IN_EVIDENCE: {pii_affected_count} criteria affected"

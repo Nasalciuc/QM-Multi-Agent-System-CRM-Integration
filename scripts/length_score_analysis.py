@@ -13,7 +13,7 @@ def main():
     data = json.loads(Path(sys.argv[1]).read_text())
     pairs = [
         (
-            e.get("word_count", len(e.get("transcript_redacted", "").split())),
+            e.get("word_count", len(e.get("transcript", "").split())),
             e.get("overall_score", 0),
         )
         for e in data

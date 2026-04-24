@@ -23,19 +23,6 @@ logger = logging.getLogger("qa_system.stt_cache")
 # Default TTL: 30 days
 DEFAULT_STT_CACHE_TTL_SECONDS = 30 * 24 * 3600
 
-# TASK-7: Lazy-loaded PII redactor for sanitising cached transcripts
-_pii_redactor_instance = None
-
-
-def _get_pii_redactor():
-    """Lazy-load PIIRedactor to avoid circular imports."""
-    global _pii_redactor_instance
-    if _pii_redactor_instance is None:
-        from processing.pii_redactor import PIIRedactor
-        _pii_redactor_instance = PIIRedactor()
-    return _pii_redactor_instance
-
-
 class STTCache:
     """Content-addressable cache for STT transcriptions.
 
@@ -189,21 +176,8 @@ class STTCache:
 
         path = self._cache_dir / f"{key}.json"
 
-        # TASK-7: PII-redact transcript text fields before disk write
+        # TASK-7: Write transcript text fields to cache without modification
         enriched = dict(data)
-        try:
-            redactor = _get_pii_redactor()
-            for text_key in ("text", "raw_text"):
-                if text_key in enriched and isinstance(enriched[text_key], str):
-                    result = redactor.redact(enriched[text_key])
-                    enriched[text_key] = result["text"]
-                    if result.get("total_redactions", 0) > 0:
-                        logger.debug(
-                            f"TASK-7: PII redacted in STT cache '{text_key}' "
-                            f"({result['total_redactions']} items): {key[:12]}"
-                        )
-        except Exception as e:
-            logger.warning(f"TASK-7: PII redaction failed for cache save, skipping: {e}")
 
         # COST-03: Attach cache metadata for future migration / audit
         enriched.setdefault("_cache_meta", {

@@ -11,7 +11,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from processing.transcript_cleaner import TranscriptCleaner
-from processing.pii_redactor import PIIRedactor
 from processing.chunker import TranscriptChunker, TRUNCATION_MARKER
 from agents.agent_02_transcription import ElevenLabsSTTAgent
 from agents.agent_03_evaluation import QualityManagementAgent
@@ -173,83 +172,6 @@ class TestReal03ListeningRatio:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# REAL-04: NATO alphabet / phonetic spelling PII
-# ═══════════════════════════════════════════════════════════════════
-
-class TestReal04NatoSpelling:
-    """REAL-04: NATO alphabet spelling caught by PII redactor."""
-
-    def test_nato_as_in_pattern(self):
-        redactor = PIIRedactor()
-        text = "D as in Denver, A as in Alpha, N as in Nancy, N as in Nancy, Y as in Yankee"
-        result = redactor.redact(text)
-        assert "[SPELLED_PII]" in result["text"]
-        assert result["pii_found"]["nato_spelled"] >= 1
-
-    def test_letter_enumeration_pattern(self):
-        redactor = PIIRedactor()
-        text = "The name is D, A, N, N, Y"
-        result = redactor.redact(text)
-        assert "[SPELLED_PII]" in result["text"]
-        assert result["pii_found"]["nato_spelled"] >= 1
-
-    def test_short_enumeration_not_caught(self):
-        """3 or fewer letters should NOT trigger NATO pattern."""
-        redactor = PIIRedactor()
-        text = "That's A, B, C"
-        result = redactor.redact(text)
-        # Short enumeration (3 letters) should not be redacted
-        assert "A, B, C" in result["text"]
-
-    def test_nato_disabled(self):
-        redactor = PIIRedactor(redact_nato_spelled=False)
-        text = "D as in Denver, A as in Alpha, N as in Nancy, N as in Nancy, Y as in Yankee"
-        result = redactor.redact(text)
-        assert "Denver" in result["text"]
-
-
-# ═══════════════════════════════════════════════════════════════════
-# REAL-05: Multi-line spoken phone numbers
-# ═══════════════════════════════════════════════════════════════════
-
-class TestReal05MultiLinePhone:
-    """REAL-05: Phone numbers spoken across multiple lines by same speaker."""
-
-    def test_seven_digits_across_lines(self):
-        redactor = PIIRedactor(redact_multiline_phone=True)
-        text = (
-            "Agent: What's your number?\n"
-            "Client: five five five\n"
-            "Client: one two three\n"
-            "Client: four"
-        )
-        result = redactor.redact(text)
-        assert result["pii_found"]["multiline_phone"] >= 1
-        # Digit words should be redacted
-        assert "five" not in result["text"].lower() or "[PHONE]" in result["text"]
-
-    def test_few_digit_words_not_caught(self):
-        """Fewer than 7 digit words should not trigger multiline phone."""
-        redactor = PIIRedactor()
-        text = (
-            "Client: I have two cats\n"
-            "Client: and three dogs"
-        )
-        result = redactor.redact(text)
-        assert result["pii_found"]["multiline_phone"] == 0
-
-    def test_multiline_disabled(self):
-        redactor = PIIRedactor(redact_multiline_phone=False)
-        text = (
-            "Client: five five five\n"
-            "Client: one two three\n"
-            "Client: four"
-        )
-        result = redactor.redact(text)
-        assert "five" in result["text"].lower()
-
-
-# ═══════════════════════════════════════════════════════════════════
 # REAL-06: Evidence fidelity (fillers preserved)
 # ═══════════════════════════════════════════════════════════════════
 
@@ -315,36 +237,8 @@ class TestReal07Truncation:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# REAL-08: PNR false positives (aviation codes exempted)
-# ═══════════════════════════════════════════════════════════════════
-
-class TestReal08PnrFalsePositives:
-    """REAL-08: Aviation codes like EVA123 exempted from PNR redaction."""
-
-    def test_aviation_code_not_redacted(self):
-        redactor = PIIRedactor()
-        result = redactor.redact("Your flight is EVA123.")
-        assert "EVA123" in result["text"]
-        assert result["pii_found"]["pnr"] == 0
-
-    def test_real_pnr_still_redacted(self):
-        redactor = PIIRedactor()
-        result = redactor.redact("Booking reference: XY3Z4K")
-        assert "[BOOKING_REF]" in result["text"]
-        assert "XY3Z4K" not in result["text"]
-
-    def test_multiple_aviation_codes_preserved(self):
-        redactor = PIIRedactor()
-        text = "Flights: ANA456, JAL789, SIA012"
-        result = redactor.redact(text)
-        assert "ANA456" in result["text"]
-        assert "JAL789" in result["text"]
-        assert "SIA012" in result["text"]
-
-
-# ═══════════════════════════════════════════════════════════════════
 # REAL-09: Prompt speaker guidance (indirect test)
-# ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════
 
 class TestReal09PromptSpeakerGuidance:
     """REAL-09: qa_system.txt contains speaker label instructions."""
@@ -372,36 +266,6 @@ class TestReal09PromptSpeakerGuidance:
         assert "SILENCE MARKERS:" in content
         assert "hold" in content.lower()
         assert "continuous_feedback" in content or "trial_close" in content
-
-
-# ═══════════════════════════════════════════════════════════════════
-# REAL-10: Price redaction (opt-in)
-# ═══════════════════════════════════════════════════════════════════
-
-class TestReal10PriceRedaction:
-    """REAL-10: Dollar amounts redacted when opt-in enabled."""
-
-    def test_prices_not_redacted_by_default(self):
-        redactor = PIIRedactor()
-        result = redactor.redact("The price is $1,234.")
-        assert "$1,234" in result["text"]
-
-    def test_prices_redacted_when_enabled(self):
-        redactor = PIIRedactor(redact_prices=True)
-        result = redactor.redact("The price is $1,234.")
-        assert "[PRICE]" in result["text"]
-        assert "$1,234" not in result["text"]
-
-    def test_verbal_price_redacted(self):
-        redactor = PIIRedactor(redact_prices=True)
-        result = redactor.redact("That's four thousand seven hundred dollars")
-        assert "[PRICE]" in result["text"]
-
-    def test_price_with_cents_redacted(self):
-        redactor = PIIRedactor(redact_prices=True)
-        result = redactor.redact("Total is $2,499.99 per person")
-        assert "[PRICE]" in result["text"]
-        assert "$2,499.99" not in result["text"]
 
 
 # ═══════════════════════════════════════════════════════════════════
