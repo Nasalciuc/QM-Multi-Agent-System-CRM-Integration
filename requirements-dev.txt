@@ -14,3 +14,6 @@ mypy>=1.10,<2.0
 
 # --- Security scanning (#17) ---
 pip-audit>=2.7,<3.0
+
+# --- Type stubs ---
+types-PyYAML>=6.0
