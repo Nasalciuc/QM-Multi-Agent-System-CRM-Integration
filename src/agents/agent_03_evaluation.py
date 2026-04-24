@@ -12,7 +12,7 @@ What remains here: detect_call_type(), calculate_score(),
 calculate_listening_ratio(), and evaluate_call() as the wiring layer.
 """
 
-from typing import Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 import re
 import logging
 
@@ -517,7 +517,7 @@ class QualityManagementAgent:
             },
         }
 
-    def calculate_listening_ratio(self, transcript: str) -> Dict[str, float]:
+    def calculate_listening_ratio(self, transcript: str) -> Dict[str, Any]:
         """Estimate agent vs client talking percentage from transcript.
 
         Expects cleaned transcripts with Agent:/Client: labels

@@ -4,10 +4,6 @@ Tests for Agent 1: Audio file discovery
 Tests AudioFileFinder (local file scanning).
 CRMAgent is tested separately in test_agent_01_crm.py.
 """
-import sys
-import os
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 

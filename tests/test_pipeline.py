@@ -4,11 +4,9 @@ Tests for src/pipeline.py
 Tests pipeline orchestration, circuit breaker, rate limiting,
 graceful shutdown, and provider tracking.
 """
-import sys
-import os
 import signal
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock
 import time
 
 import pytest

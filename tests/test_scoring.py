@@ -3,7 +3,6 @@ Tests for scoring logic (calculate_score) - dedicated parameterized tests.
 
 Separated from test_agent_03 for clarity and detailed edge-case coverage.
 """
-import sys
 import os
 import pytest
 from unittest.mock import MagicMock, patch

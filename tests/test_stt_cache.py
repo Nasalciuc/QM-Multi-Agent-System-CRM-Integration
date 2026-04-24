@@ -185,7 +185,7 @@ class TestTTL:
         old_time = time.time() - 10
         os.utime(old_file, (old_time, old_time))
         # Create cache with 5-second TTL — should clean up
-        cache = STTCache(cache_dir=cache_dir, enable=True, ttl_seconds=5)
+        STTCache(cache_dir=cache_dir, enable=True, ttl_seconds=5)
         assert not old_file.exists()
 
 

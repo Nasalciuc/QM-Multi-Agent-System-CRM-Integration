@@ -88,7 +88,7 @@ class OpenAIClient(BaseLLM):
 
         start = time.time()
         try:
-            response = self._client.chat.completions.create(**kwargs)
+            response = self._client.chat.completions.create(**kwargs)  # type: ignore[call-overload]
         except Exception as e:
             self._classify_and_raise(e)
         elapsed = time.time() - start

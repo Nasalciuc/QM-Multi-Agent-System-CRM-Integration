@@ -10,14 +10,20 @@ Flow:
     Agent 4 (Integration)       -> Excel/CSV/JSON files
 """
 
-from typing import List, Dict, Optional
+from typing import Any, List, Dict, Optional
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import os
 import shutil
 import signal
 import threading
+import time
+import logging
+
+from utils import safe_log_filename
+from structured_logger import emit_metric
+
+logger = logging.getLogger("qa_system.pipeline")
 
 # Keys that must NEVER appear in exported evaluation dicts.
 # Raw LLM I/O and prompts are debug artifacts — never ship them to customer outputs.
@@ -31,13 +37,6 @@ _EXPORT_BLOCKED_KEYS = frozenset({
 def _sanitize_for_export(evaluation: Dict) -> Dict:
     """Remove raw LLM I/O / prompt debug keys before export."""
     return {k: v for k, v in evaluation.items() if k not in _EXPORT_BLOCKED_KEYS}
-import time
-import logging
-
-from utils import safe_log_filename
-from structured_logger import emit_metric
-
-logger = logging.getLogger("qa_system.pipeline")
 
 
 class _GracefulShutdown:
@@ -122,8 +121,9 @@ class Pipeline:
         self._shutdown = _GracefulShutdown()
 
         # NEW-03: Signal handlers registered/restored per run, not in __init__
-        self._old_sigint = None
-        self._old_sigterm = None
+        # signal.signal() returns Callable | int | None
+        self._old_sigint: Any = None
+        self._old_sigterm: Any = None
 
     def _register_signals(self) -> None:
         """Register SIGINT/SIGTERM handlers for graceful shutdown.
@@ -268,7 +268,7 @@ class Pipeline:
 
         # Step 3: Evaluate with QA Agent
         logger.info("STEP 3: Evaluating with QualityManagementAgent...")
-        evaluations = []
+        evaluations: List[Dict] = []
         eval_count = 0
         consecutive_failures = 0
 
@@ -430,7 +430,7 @@ class Pipeline:
         if not exportable:
             logger.info("No valid evaluations to export (all circuit-breaker).")
             return evaluations
-        files = self.integration_agent.export_all(exportable, self.qa_agent.EVALUATION_CRITERIA)
+        self.integration_agent.export_all(exportable, self.qa_agent.EVALUATION_CRITERIA)
 
         # Print summary
         self.print_summary(evaluations)

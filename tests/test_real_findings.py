@@ -4,14 +4,13 @@ Tests for REAL-01 through REAL-12 findings.
 These tests verify fixes for issues discovered by analysing a real
 production transcript (Jerome ↔ Danny, 6 speakers detected).
 """
-import re
 import logging
 from unittest.mock import MagicMock
 
 import pytest
 
 from processing.transcript_cleaner import TranscriptCleaner
-from processing.chunker import TranscriptChunker, TRUNCATION_MARKER
+from processing.chunker import TranscriptChunker
 from agents.agent_02_transcription import ElevenLabsSTTAgent
 from agents.agent_03_evaluation import QualityManagementAgent
 
@@ -287,7 +286,7 @@ class TestReal11SpeakerLabelValidation:
             "Speaker 0: I was calling about your trip"
         )
         with caplog.at_level(logging.WARNING, logger="qa_system.processing"):
-            result = cleaner.clean(raw)
+            cleaner.clean(raw)
 
         assert any("REAL-11" in rec.message for rec in caplog.records), \
             f"Expected REAL-11 warning, got: {[r.message for r in caplog.records]}"

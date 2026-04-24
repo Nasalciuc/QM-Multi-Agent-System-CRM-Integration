@@ -3,9 +3,7 @@ Tests for src/core/model_factory.py
 
 Tests provider creation, fallback behavior, config validation.
 """
-import sys
 import os
-import json
 import yaml
 import pytest
 from unittest.mock import MagicMock, patch
@@ -354,7 +352,7 @@ class TestTypedExceptionHandling:
 
             # Second call should skip primary entirely
             factory.providers[0].chat.reset_mock()
-            result2 = factory.chat_with_fallback("sys", "usr")
+            factory.chat_with_fallback("sys", "usr")
             factory.providers[0].chat.assert_not_called()
 
     def test_invalid_model_id_disables_provider(self, models_config):
@@ -371,7 +369,7 @@ class TestTypedExceptionHandling:
             )
             factory.providers[1].chat = MagicMock(return_value=fallback_resp)
 
-            result = factory.chat_with_fallback("sys", "usr")
+            factory.chat_with_fallback("sys", "usr")
             assert "test-primary" in factory._disabled_providers
 
 

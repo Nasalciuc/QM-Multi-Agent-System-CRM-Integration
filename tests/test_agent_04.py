@@ -3,7 +3,6 @@ Tests for Agent 4: Integration & Export
 
 Updated to import from agent_04_export (was agent_04_ResultSending).
 """
-import sys
 import os
 import json
 import pytest

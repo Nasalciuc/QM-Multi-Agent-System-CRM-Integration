@@ -4,9 +4,6 @@ Tests for Agent 2: ElevenLabs Transcription (Scribe v2)
 Tests ElevenLabsSTTAgent with mocked ElevenLabs client.
 Covers diarization, timeout, retry, batch processing.
 """
-import sys
-import os
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -512,7 +509,6 @@ class TestPreprocessAudio:
 
     def test_preprocess_no_change_when_savings_small(self, mock_client, tmp_path):
         """Audio with negligible silence should not produce a temp file."""
-        from pydub import AudioSegment
         from pydub.generators import Sine
 
         # Pure tone, no silence to trim
@@ -646,7 +642,6 @@ class TestPreprocessAudio:
 
     def test_preprocess_disabled(self, mock_client, tmp_path):
         """When preprocess_audio=False, transcribe() should not call _preprocess_audio."""
-        from pydub import AudioSegment
         from pydub.generators import Sine
 
         tone = Sine(440).to_audio_segment(duration=6000).apply_gain(-20)
@@ -681,7 +676,7 @@ class TestPreprocessAudio:
             enable_stt_cache=False,
             preprocess_audio=True,
         )
-        result = agent.transcribe(audio_path)
+        agent.transcribe(audio_path)
         # The temp .processed.mp3 file should have been cleaned up
         processed_path = tmp_path / ".cleanup_test.processed.mp3"
         assert not processed_path.exists()

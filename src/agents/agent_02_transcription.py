@@ -422,9 +422,9 @@ class ElevenLabsSTTAgent:
         # Second pass: build lines with merged speaker IDs + REAL-12 timestamps
         # REAL-12: Insert [M:SS] marker when gap between words exceeds 30s
         _GAP_THRESHOLD_SECS = 30.0
-        lines = []
+        lines: list[str] = []
         current_speaker = None
-        current_line_words = []
+        current_line_words: list[str] = []
         effective_speakers: set = set()
         last_word_time: float | None = None
 

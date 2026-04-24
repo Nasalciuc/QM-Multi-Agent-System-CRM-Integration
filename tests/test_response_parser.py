@@ -3,8 +3,6 @@ Tests for src/inference/response_parser.py
 
 Tests JSON extraction, validation, and score normalization.
 """
-import sys
-import os
 import json
 import pytest
 

@@ -145,8 +145,8 @@ class TranscriptCleaner:
         self.direction = direction_lower
         self.remove_fillers = remove_fillers
         # MOD-10: Track speaker detection method for benchmark transparency
-        self._last_detection_method = None
-        self._last_agent_name = None
+        self._last_detection_method: Optional[str] = None
+        self._last_agent_name: Optional[str] = None
 
     def clean(self, transcript: str) -> str:
         """Full cleaning pipeline.

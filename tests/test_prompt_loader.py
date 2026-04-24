@@ -3,8 +3,6 @@ Tests for src/prompts/templates.py
 
 Tests PromptLoader, template rendering, SafeDict behavior.
 """
-import sys
-import os
 import pytest
 
 from prompts.templates import PromptLoader, _SafeDict

@@ -10,10 +10,8 @@ Provides:
 """
 
 import json
-import os
-import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -85,10 +83,17 @@ def mock_elevenlabs_client():
     result.text = "Hello, how can I help? I need assistance."
     result.language_code = "en"
     # Scribe v2 word-level diarization format
-    w0 = lambda t, s="speaker_0", tp="word": MagicMock(text=t, speaker_id=s, type=tp)
-    w1 = lambda t, s="speaker_1", tp="word": MagicMock(text=t, speaker_id=s, type=tp)
-    sp0 = lambda: MagicMock(text=" ", speaker_id="speaker_0", type="spacing")
-    sp1 = lambda: MagicMock(text=" ", speaker_id="speaker_1", type="spacing")
+    def w0(t, s="speaker_0", tp="word"):
+        return MagicMock(text=t, speaker_id=s, type=tp)
+
+    def w1(t, s="speaker_1", tp="word"):
+        return MagicMock(text=t, speaker_id=s, type=tp)
+
+    def sp0():
+        return MagicMock(text=" ", speaker_id="speaker_0", type="spacing")
+
+    def sp1():
+        return MagicMock(text=" ", speaker_id="speaker_1", type="spacing")
     result.words = [
         w0("Hello"), w0(",", tp="punctuation"), sp0(),
         w0("how"), sp0(), w0("can"), sp0(), w0("I"), sp0(), w0("help"),

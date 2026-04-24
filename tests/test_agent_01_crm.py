@@ -7,8 +7,7 @@ All HTTP calls are mocked — no real API requests.
 import json
 import os
 from pathlib import Path
-from unittest.mock import patch, MagicMock, PropertyMock
-from contextlib import contextmanager
+from unittest.mock import patch, MagicMock
 
 import pytest
 

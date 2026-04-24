@@ -8,7 +8,7 @@ Two classes:
 """
 
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 from urllib.parse import urlparse
 from datetime import datetime, timedelta
 import os
@@ -37,7 +37,7 @@ class AudioFileFinder:
             logger.warning(f"Folder not found: {self.folder_path}")
             return []
 
-        audio_files = []
+        audio_files: List[Path] = []
         for ext in self.extensions:
             audio_files.extend(self.folder_path.glob(f"*{ext}"))
 
@@ -113,9 +113,10 @@ class CRMAgent:
         # SSL verification: use CRM_CA_BUNDLE env var if set, else system trust store.
         # HIGH-01: Default to True (enabled) instead of False.
         ca_bundle = os.environ.get("CRM_CA_BUNDLE", "").strip()
+        self._ssl_verify: Union[str, bool]
         if ca_bundle:
             self._ssl_verify = ca_bundle
-            logger.info(f"CRMAgent SSL: using custom CA bundle from CRM_CA_BUNDLE")
+            logger.info("CRMAgent SSL: using custom CA bundle from CRM_CA_BUNDLE")
         else:
             self._ssl_verify = True
             logger.info(

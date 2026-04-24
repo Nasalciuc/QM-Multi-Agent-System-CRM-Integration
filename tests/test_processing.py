@@ -4,8 +4,6 @@ Tests for src/processing/ modules:
   - TokenCounter
   - TranscriptChunker
 """
-import sys
-import os
 
 import pytest
 
@@ -135,7 +133,7 @@ class TestTranscriptCleaner:
         for line in lines:
             assert line.startswith("Agent:") or line.startswith("Client:"), f"Unexpected label: {line}"
         # Must have both roles
-        labels = {l.split(":")[0] for l in lines}
+        labels = {ln.split(":")[0] for ln in lines}
         assert labels == {"Agent", "Client"}
 
     def test_three_speakers_minor_merges_to_nearest(self):
@@ -158,7 +156,7 @@ class TestTranscriptCleaner:
         for line in lines:
             assert line.startswith("Agent:") or line.startswith("Client:"), f"Unexpected label: {line}"
         # "Also want hotels" merges to nearest major = Speaker 1 = Agent
-        hotel_line = [l for l in lines if "Also want hotels" in l][0]
+        hotel_line = [ln for ln in lines if "Also want hotels" in ln][0]
         assert hotel_line.startswith("Agent:")
 
     def test_two_speakers_unchanged(self):
@@ -222,7 +220,7 @@ class TestTranscriptCleaner:
         assert len(lines) == 2
 
         # Both labels must be present and different
-        labels = [l.split(":")[0] for l in lines]
+        labels = [ln.split(":")[0] for ln in lines]
         assert set(labels) == {"Agent", "Client"}, f"Expected both labels, got {labels}"
 
         # Speaker 1 has client content ("I'm looking for") → Client
@@ -425,12 +423,12 @@ class TestAUD01CompanyNameAgentDetection:
         lines = result.strip().split("\n")
 
         # Speaker 1 (Emma) MUST be Agent — she has company name + "how can I help"
-        emma_line = [l for l in lines if "Emma" in l][0]
+        emma_line = [ln for ln in lines if "Emma" in ln][0]
         assert emma_line.startswith("Agent:"), \
             f"Emma (BBC agent) should be Agent, got: {emma_line[:80]}"
 
         # Speaker 0 (Matt) MUST be Client — he's the customer
-        matt_line = [l for l in lines if "Matt" in l][0]
+        matt_line = [ln for ln in lines if "Matt" in ln][0]
         assert matt_line.startswith("Client:"), \
             f"Matt (customer) should be Client, got: {matt_line[:80]}"
 

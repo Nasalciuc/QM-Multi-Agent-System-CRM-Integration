@@ -108,7 +108,7 @@ class TranscriptChunker:
         start_end_idx = len(start_lines)
 
         # Build end portion (from the end)
-        end_lines = []
+        end_lines: list[str] = []
         end_tokens = 0
         for line in reversed(lines):
             line_tokens = self._counter.count_tokens(line + "\n")

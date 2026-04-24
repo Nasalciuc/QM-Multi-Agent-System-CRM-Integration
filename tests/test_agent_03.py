@@ -6,11 +6,9 @@ Rewritten for the new architecture:
   - Heavy mocking of ModelFactory + InferenceEngine for unit tests.
   - Score calculation and call-type detection are pure-logic tests (no mocks).
 """
-import sys
 import os
-import json
 import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 
 # --- Fixtures ---

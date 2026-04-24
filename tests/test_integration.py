@@ -5,10 +5,8 @@ End-to-end pipeline test with all 4 agents mocked.
 Verifies that the full pipeline chain produces valid output
 and that data flows correctly between stages.
 """
-import sys
-import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -261,7 +259,7 @@ class TestCRMIntegration:
         }
 
         pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
-        results = pipeline.run("2026-02-01")
+        pipeline.run("2026-02-01")
 
         assert a3.evaluate_call.call_count == 2
 
@@ -295,6 +293,6 @@ class TestCRMIntegration:
         }
 
         pipeline = Pipeline(a1, a2, a3, a4, delay_between_evaluations=0)
-        results = pipeline.run("2026-02-01")
+        pipeline.run("2026-02-01")
         # Should not crash; metadata defaults to empty strings
         assert a3.evaluate_call.called

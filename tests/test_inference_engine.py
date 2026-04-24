@@ -4,10 +4,7 @@ Tests for src/inference/inference_engine.py
 Tests cache sanitization (CRIT-1), atomic writes (CRIT-2),
 cache key with model (MED-1), JSON serializer (CRIT-4).
 """
-import sys
-import os
 import json
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

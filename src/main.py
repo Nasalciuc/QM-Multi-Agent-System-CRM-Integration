@@ -110,10 +110,10 @@ def _run_dry_run(args, config, logger):
 
     Scans audio files, estimates STT and LLM costs, reports totals.
     """
-    from agents.agent_01_audio import AudioFileFinder, CRMAgent
+    from agents.agent_01_audio import AudioFileFinder
 
     print(f"\n{'='*60}")
-    print(f"  DRY RUN — Cost Estimation (no API calls)")
+    print("  DRY RUN — Cost Estimation (no API calls)")
     print(f"{'='*60}\n")
 
     audio_files = []

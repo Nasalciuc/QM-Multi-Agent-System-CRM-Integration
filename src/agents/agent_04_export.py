@@ -11,7 +11,7 @@ Exports:
 
 from pathlib import Path
 from typing import Dict, List, Optional
-from datetime import datetime, date
+from datetime import datetime
 import hashlib
 import hmac
 import json
@@ -66,7 +66,6 @@ class IntegrationAgent:
 
         # Use single timestamp for all exports to avoid filename drift
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        base = self.output_folder / f"QM_{timestamp}"
 
         # Build summary DataFrame
         summary_rows = []

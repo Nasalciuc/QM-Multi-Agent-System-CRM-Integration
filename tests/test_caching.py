@@ -9,11 +9,7 @@ Tests:
 """
 import sys
 import os
-import json
-import time
-from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
-from collections import OrderedDict
+from unittest.mock import MagicMock, patch
 
 import pytest
 
